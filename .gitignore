@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyo
+
+# Środowisko wirtualne
+.venv/
+venv/
+ENV/
+env/
+
+# Baza danych (dane użytkownika – nie commitować)
+*.db
+*.db-shm
+*.db-wal
+lottomat_archive.db
+
+# VS Code
+.vscode/
+
+# Dystrybucja / build
+dist/
+build/
+*.egg-info/
+*.spec
+
+# Flet build output
+.flet/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logi
+*.log
