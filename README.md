@@ -2,7 +2,7 @@
 
 **Generator szczęśliwych liczb do gier losowych** — nowoczesna aplikacja desktopowa z archiwum wyników.
 
-![Version](https://img.shields.io/badge/wersja-1.1-6366f1)
+![Version](https://img.shields.io/badge/wersja-1.2-6366f1)
 ![Python](https://img.shields.io/badge/Python-3.14-15803d)
 ![License](https://img.shields.io/badge/licencja-CC%20BY%204.0-blue)
 
@@ -12,7 +12,9 @@
 
 - **Lotto** — generuje 6 losowych liczb z zakresu 1–49 (bez powtórzeń)
 - **Eurojackpot** — generuje 5 liczb z zakresu 1–50 oraz 2 gwiazdy z zakresu 1–12 (bez powtórzeń)
-- **Archiwum** — zapis i przeglądanie historii wylosowanych zestawów z bazą SQLite
+- **Kupony wielozestawowe** — do 10 zestawów liczb w jednym zakładzie; każdy zestaw porównywany z wynikiem osobno
+- **Archiwum** — zapis i przeglądanie historii zakładów z bazą SQLite; rekordy automatycznie dopasowują wysokość do liczby zestawów
+- **Dodawanie własnych liczb** — możliwość ręcznego wprowadzenia zestawu zamiast losowania
 - **Kopiowanie do schowka** — szybkie skopiowanie wylosowanych liczb
 - **Tryb jasny / ciemny** — przełączanie motywu
 - **Splash screen** — ekran powitalny z informacjami o aplikacji
@@ -78,6 +80,16 @@ Uruchom_Lottomat.bat  → launcher Windows
 ## Autor
 
 **Marcin Żurawicz**
+
+---
+
+## Historia wersji
+
+| Wersja | Zmiany |
+|--------|--------|
+| 1.2 | Kupony wielozestawowe (do 10 zestawów/zakład), auto-wysokość wierszy w archiwum, zastąpienie DataTable niestandardową listą |
+| 1.1 | Archiwum zakładów, statystyki, dodawanie własnych liczb, tryb ciemny |
+| 1.0 | Pierwsza wersja: generator Lotto i Eurojackpot |
 
 ---
 
