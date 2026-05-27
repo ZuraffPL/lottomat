@@ -17,33 +17,32 @@ class ArchiveTabFlet:
         self.database = database
         self.filter_value = "Wszystkie"
 
-        # Tworzenie tabeli
-        self.data_table = ft.DataTable(
-            columns=[
-                ft.DataColumn(ft.Text("ID", weight=ft.FontWeight.BOLD, size=12)),
-                ft.DataColumn(ft.Text("Gra", weight=ft.FontWeight.BOLD, size=12)),
-                ft.DataColumn(ft.Text("Twoje liczby", weight=ft.FontWeight.BOLD, size=12)),
-                ft.DataColumn(ft.Text("Dodatkowe", weight=ft.FontWeight.BOLD, size=12)),
-                ft.DataColumn(ft.Text("Wynik losowania", weight=ft.FontWeight.BOLD, size=12)),
-                ft.DataColumn(ft.Text("Wynik extra", weight=ft.FontWeight.BOLD, size=12)),
-                ft.DataColumn(ft.Text("Trafność", weight=ft.FontWeight.BOLD, size=12)),
-                ft.DataColumn(ft.Text("Data", weight=ft.FontWeight.BOLD, size=12)),
-                ft.DataColumn(ft.Text("Akcje", weight=ft.FontWeight.BOLD, size=12)),
-            ],
-            rows=[],
-            border_radius=10,
-            heading_row_height=50,
-            data_row_min_height=60,
-            data_row_max_height=80,
+        # Nagłówek listy rekordów (stały, nie scrolluje)
+        self.records_header = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Container(ft.Text("ID",              size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=32),
+                    ft.Container(ft.Text("Gra",             size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=95),
+                    ft.Container(ft.Text("Twoje liczby",    size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=3),
+                    ft.Container(ft.Text("Dodatkowe",       size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
+                    ft.Container(ft.Text("Wynik losowania", size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
+                    ft.Container(ft.Text("Wynik extra",     size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=1),
+                    ft.Container(ft.Text("Trafność",        size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
+                    ft.Container(ft.Text("Data",            size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=125),
+                    ft.Container(ft.Text("Akcje",           size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=70),
+                ],
+                spacing=8,
+            ),
+            bgcolor="#f1f5f9",
+            border_radius=ft.border_radius.only(top_left=8, top_right=8),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=10),
         )
-        # Inicjalizacja rows bez adnotacji typu
-        self.data_table.rows = []
+
+        # Lista rekordów (scrolluje niezależnie od nagłówka)
+        self.records_list = ft.ListView(spacing=1, expand=True)
 
         self.stats_text = ft.Text("Rekordów w archiwum: 0", size=13)
         self.stats_column = ft.Column([], spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
-
-        # Nie przypisuj nowej listy do self.page.overlay, overlay jest zarządzane przez Flet
-        # Możesz bezpośrednio używać self.page.overlay.append(...)
     
     def _lotto_prize_tier(self, matched: int) -> tuple[str, str]:
         """Zwraca (nazwa stopnia, kolor) dla Lotto. Pusty string = brak wygranej."""
@@ -87,29 +86,50 @@ class ArchiveTabFlet:
             with_result = [r for r in game_recs if r[4]]
             n_res = len(with_result)
 
+            # Rankingi stopni wygranych (wyższy = lepsza wygrana)
+            lotto_tier_rank: dict[str, int] = {"szóstka": 4, "piątka": 3, "czwórka": 2, "trójka": 1}
+            euro_tier_rank: dict[str, int] = {
+                "I (5+2)": 12, "II (5+1)": 11, "III (5+0)": 10, "IV (4+2)": 9,
+                "V (4+1)": 8, "VI (3+2)": 7, "VII (4+0)": 6, "VIII (2+2)": 5,
+                "IX (3+1)": 4, "X (3+0)": 3, "XI (1+2)": 2, "XII (2+1)": 1,
+            }
+
             tier_counts: dict[str, dict[str, Any]] = {}
             wins = 0
 
             for rec in with_result:
                 _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _ = rec
-                gen_nums = set(numbers.split(",")) if numbers else set()
                 act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
-                hits = gen_nums & act_nums
+                main_sets = numbers.split("|") if numbers else []
+                extra_sets = extra_numbers.split("|") if extra_numbers else []
 
-                if game_type == "Lotto":
-                    tier_name, tier_color = self._lotto_prize_tier(len(hits))
-                else:
-                    gen_extra = set(extra_numbers.split(",")) if extra_numbers else set()
-                    act_extra = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
-                    tier_name, tier_color = self._eurojackpot_prize_tier(
-                        len(hits), len(gen_extra & act_extra)
-                    )
+                # Najlepsza wygrana w tym rekordzie (spośród wszystkich zestawów)
+                best_rank = 0
+                best_tier_name = ""
+                best_tier_color = ""
 
-                if tier_name:
+                for idx, s in enumerate(main_sets):
+                    gen_nums = set(s.split(","))
+                    if game_type == "Lotto":
+                        tier_name, tier_color = self._lotto_prize_tier(len(gen_nums & act_nums))
+                        rank = lotto_tier_rank.get(tier_name, 0)
+                    else:
+                        act_extra = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
+                        gen_extra = set(extra_sets[idx].split(",")) if idx < len(extra_sets) else set()
+                        tier_name, tier_color = self._eurojackpot_prize_tier(
+                            len(gen_nums & act_nums), len(gen_extra & act_extra)
+                        )
+                        rank = euro_tier_rank.get(tier_name, 0)
+                    if rank > best_rank:
+                        best_rank = rank
+                        best_tier_name = tier_name
+                        best_tier_color = tier_color
+
+                if best_tier_name:
                     wins += 1
-                    if tier_name not in tier_counts:
-                        tier_counts[tier_name] = {"count": 0, "color": tier_color}
-                    tier_counts[tier_name]["count"] += 1
+                    if best_tier_name not in tier_counts:
+                        tier_counts[best_tier_name] = {"count": 0, "color": best_tier_color}
+                    tier_counts[best_tier_name]["count"] += 1
 
             win_pct = wins / n_res * 100 if n_res > 0 else 0.0
 
@@ -154,16 +174,19 @@ class ArchiveTabFlet:
         )
         win_ratio_controls.append(ft.Container(height=6))
 
-        # Lotto: zlicz 0..6 trafień
+        # Lotto: zlicz 0..6 trafień (per zestaw – jeden rekord z 3 zestawami daje 3 punkty danych)
         lotto_hits: dict[int, int] = {i: 0 for i in range(7)}
         lotto_res = [r for r in all_records if r[1] == "Lotto" and r[4]]
+        lotto_sets_total = 0
         for rec in lotto_res:
             _, _, numbers, _, actual_numbers, _, _ = rec
-            gen_nums = set(numbers.split(",")) if numbers else set()
             act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
-            lotto_hits[len(gen_nums & act_nums)] += 1
+            for s in (numbers.split("|") if numbers else []):
+                gen_nums = set(s.split(",")) if s else set()
+                lotto_hits[len(gen_nums & act_nums)] += 1
+                lotto_sets_total += 1
 
-        lotto_total = len(lotto_res)
+        lotto_total = lotto_sets_total
         lotto_section: list[ft.Control] = [
             ft.Text("🔴 Lotto", size=12, weight=ft.FontWeight.BOLD, color="#ef4444"),
         ]
@@ -195,19 +218,24 @@ class ArchiveTabFlet:
         )
         win_ratio_controls.append(ft.Container(height=8))
 
-        # Eurojackpot: zlicz (main, extra) trafień
+        # Eurojackpot: zlicz (main, extra) trafień (per zestaw)
         euro_hits: dict[tuple[int, int], int] = {}
         euro_res = [r for r in all_records if r[1] == "Eurojackpot" and r[4]]
+        euro_sets_total = 0
         for rec in euro_res:
             _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _ = rec
-            gen_nums = set(numbers.split(",")) if numbers else set()
-            gen_extra = set(extra_numbers.split(",")) if extra_numbers else set()
             act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
             act_extra = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
-            key = (len(gen_nums & act_nums), len(gen_extra & act_extra))
-            euro_hits[key] = euro_hits.get(key, 0) + 1
+            main_sets = numbers.split("|") if numbers else []
+            extra_sets = extra_numbers.split("|") if extra_numbers else []
+            for idx, s in enumerate(main_sets):
+                gen_nums = set(s.split(","))
+                gen_extra = set(extra_sets[idx].split(",")) if idx < len(extra_sets) else set()
+                key = (len(gen_nums & act_nums), len(gen_extra & act_extra))
+                euro_hits[key] = euro_hits.get(key, 0) + 1
+                euro_sets_total += 1
 
-        euro_total = len(euro_res)
+        euro_total = euro_sets_total
         euro_section: list[ft.Control] = [
             ft.Text("🔵 Eurojackpot", size=12, weight=ft.FontWeight.BOLD, color="#3b82f6"),
         ]
@@ -355,6 +383,73 @@ class ArchiveTabFlet:
         
         return ft.Row(controls, spacing=2, wrap=False)
     
+    def _build_sets_display(
+        self,
+        sets: list[str],
+        act_nums: set[str],
+    ) -> ft.Control:
+        """Buduje widget wyświetlający jeden lub wiele zestawów liczb z podświetlonymi trafieniami."""
+        if not sets:
+            return ft.Row([ft.Text("-", size=12)])
+        if len(sets) == 1:
+            matches = set(sets[0].split(",")) & act_nums
+            return self.format_numbers_with_highlights(sets[0], matches)
+        rows: list[ft.Control] = []
+        for idx, s in enumerate(sets):
+            matches = set(s.split(",")) & act_nums
+            rows.append(
+                ft.Row(
+                    [
+                        ft.Text(f"{idx + 1}.", size=10, color="#9ca3af", width=16),
+                        self.format_numbers_with_highlights(s, matches),
+                    ],
+                    spacing=2,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+        return ft.Column(rows, spacing=3, tight=True)
+
+    def _build_accuracy_display(
+        self,
+        game_type: str,
+        main_sets: list[str],
+        extra_sets: list[str],
+        act_nums: set[str],
+        act_extra: set[str],
+    ) -> ft.Control:
+        """Buduje widget trafności dla jednego lub wielu zestawów."""
+        if not main_sets:
+            return ft.Text("-", size=12, color="#6b7280")
+
+        def lotto_acc(s: str) -> tuple[str, str]:
+            hits = len(set(s.split(",")) & act_nums)
+            tier_name, tier_color = self._lotto_prize_tier(hits)
+            return (tier_name if tier_name else f"{hits}/6"), (tier_color if tier_color else "#6b7280")
+
+        def euro_acc(idx: int) -> tuple[str, str]:
+            hits_m = len(set(main_sets[idx].split(",")) & act_nums)
+            hits_e = len(set(extra_sets[idx].split(",")) & act_extra) if idx < len(extra_sets) else 0
+            tier_name, tier_color = self._eurojackpot_prize_tier(hits_m, hits_e)
+            return (tier_name if tier_name else f"{hits_m}+{hits_e}"), (tier_color if tier_color else "#6b7280")
+
+        if len(main_sets) == 1:
+            text, color = lotto_acc(main_sets[0]) if game_type == "Lotto" else euro_acc(0)
+            return ft.Text(text, size=12, weight=ft.FontWeight.BOLD, color=color)
+
+        rows: list[ft.Control] = []
+        for idx in range(len(main_sets)):
+            text, color = lotto_acc(main_sets[idx]) if game_type == "Lotto" else euro_acc(idx)
+            rows.append(
+                ft.Row(
+                    [
+                        ft.Text(f"{idx + 1}.", size=10, color="#9ca3af", width=16),
+                        ft.Text(text, size=11, weight=ft.FontWeight.BOLD, color=color),
+                    ],
+                    spacing=2,
+                )
+            )
+        return ft.Column(rows, spacing=3, tight=True)
+
     def refresh_archive(self):
         """Odświeżenie listy rekordów"""
         # Pobierz rekordy
@@ -363,107 +458,100 @@ class ArchiveTabFlet:
             records = self.database.get_all_records()
         else:
             records = self.database.get_records_by_game(self.filter_value)
-        
-        # Czyszczenie tabeli
-        self.data_table.rows = []
-        
-        # Wypełnienie tabeli
+
+        # Czyszczenie listy rekordów
+        self.records_list.controls.clear()
+
+        # Wypełnienie listy
         for record in records:
             record_id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date = record
-            
-            # Konwersja liczb
-            gen_nums: set[str] = set(numbers.split(",")) if numbers else set()
-            gen_extra: set[str] = set(extra_numbers.split(",")) if extra_numbers else set()
+
+            # Parsowanie zestawów (separator '|'; stare rekordy bez '|' = jeden zestaw)
+            main_sets: list[str] = numbers.split("|") if numbers else []
+            extra_sets: list[str] = extra_numbers.split("|") if extra_numbers else []
             act_nums: set[str] = set(actual_numbers.split(",")) if actual_numbers else set()
             act_extra: set[str] = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
-            
-            # Oblicz trafienia
-            matches_main = gen_nums & act_nums
-            matches_extra = gen_extra & act_extra
-            
-            # Formatowanie liczb z podświetleniem trafień
-            numbers_display = self.format_numbers_with_highlights(numbers, matches_main)
-            extra_display = self.format_numbers_with_highlights(extra_numbers, matches_extra) if extra_numbers else ft.Row([ft.Text("-", size=12)])
-            
+
+            # Wyświetlanie zestawów z podświetleniem trafień
+            numbers_display = self._build_sets_display(main_sets, act_nums)
+            extra_display = self._build_sets_display(extra_sets, act_extra) if extra_sets else ft.Row([ft.Text("-", size=12)])
+
             # Wynik losowania
             result_display = actual_numbers.replace(",", ", ") if actual_numbers else "-"
             result_extra_display = actual_extra_numbers.replace(",", ", ") if actual_extra_numbers else "-"
-            
-            # Trafność
+
+            # Trafność (osobno dla każdego zestawu, jeśli podano wynik)
             if actual_numbers:
-                if game_type == "Lotto":
-                    tier_name, tier_color = self._lotto_prize_tier(len(matches_main))
-                    if tier_name:
-                        accuracy = tier_name
-                        accuracy_color = tier_color
-                    else:
-                        accuracy = f"{len(matches_main)}/6"
-                        accuracy_color = "#6b7280"
-                else:
-                    tier_name, tier_color = self._eurojackpot_prize_tier(len(matches_main), len(matches_extra))
-                    if tier_name:
-                        accuracy = tier_name
-                        accuracy_color = tier_color
-                    else:
-                        accuracy = f"{len(matches_main)}+{len(matches_extra)}"
-                        accuracy_color = "#6b7280"
+                accuracy_display = self._build_accuracy_display(
+                    game_type, main_sets, extra_sets, act_nums, act_extra
+                )
             else:
-                accuracy = "-"
-                accuracy_color = "#6b7280"
-            
+                accuracy_display: ft.Control = ft.Text("-", size=12, color="#6b7280")
+
             # Formatowanie daty
             try:
                 date_obj = datetime.fromisoformat(created_date)
                 date_display = date_obj.strftime("%Y-%m-%d %H:%M")
             except ValueError:
                 date_display = created_date
-            
-            # Kolor tła w zależności od typu gry i motywu
+
+            # Kolor tła i kolor nazwy gry
             if self.page.theme_mode == ft.ThemeMode.DARK:
-                # Tryb ciemny - subtelne ciemne kolory
                 bg_color = self.LOTTO_BG_DARK if game_type == "Lotto" else self.EURO_BG_DARK
             else:
-                # Tryb jasny - jasne kolory
                 bg_color = self.LOTTO_BG_LIGHT if game_type == "Lotto" else self.EURO_BG_LIGHT
-            
-            # Tworzenie wiersza
-            row = ft.DataRow(
-                color={ft.ControlState.DEFAULT: bg_color},
-                cells=[
-                    ft.DataCell(ft.Text(str(record_id), size=12)),
-                    ft.DataCell(ft.Text(game_type, size=12, weight=ft.FontWeight.BOLD)),
-                    ft.DataCell(numbers_display),
-                    ft.DataCell(extra_display),
-                    ft.DataCell(ft.Text(result_display, size=12)),
-                    ft.DataCell(ft.Text(result_extra_display, size=12)),
-                    ft.DataCell(ft.Text(accuracy, size=12, weight=ft.FontWeight.BOLD, color=accuracy_color)),
-                    ft.DataCell(ft.Text(date_display, size=12)),
-                    ft.DataCell(
-                        ft.Row(
-                            [
-                                ft.IconButton(
-                                    icon=ft.Icons.ADD_CIRCLE_OUTLINE,
-                                    icon_color="#1d4ed8",
-                                    tooltip="Dodaj wynik",
-                                    data={"id": record_id, "type": game_type},
-                                    on_click=self.handle_add_result,
-                                ),
-                                ft.IconButton(
-                                    icon=ft.Icons.DELETE_OUTLINE,
-                                    icon_color="#b91c1c",
-                                    tooltip="Usuń",
-                                    data=record_id,
-                                    on_click=self.handle_delete,
-                                ),
-                            ],
-                            spacing=5,
-                        )
-                    ),
-                ],
+            game_color = "#ef4444" if game_type == "Lotto" else "#3b82f6"
+
+            # Wiersz jako Container – wysokość dopasowuje się automatycznie do zawartości
+            row_widget = ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Container(
+                            ft.Text(str(record_id), size=12, color="#374151"),
+                            width=32,
+                        ),
+                        ft.Container(
+                            ft.Text(game_type, size=12, weight=ft.FontWeight.BOLD, color=game_color),
+                            width=95,
+                        ),
+                        ft.Container(numbers_display, expand=3),
+                        ft.Container(extra_display, expand=2),
+                        ft.Container(ft.Text(result_display, size=12), expand=2),
+                        ft.Container(ft.Text(result_extra_display, size=12), expand=1),
+                        ft.Container(accuracy_display, expand=2),
+                        ft.Container(ft.Text(date_display, size=11, color="#6b7280"), width=125),
+                        ft.Container(
+                            ft.Row(
+                                [
+                                    ft.IconButton(
+                                        icon=ft.Icons.ADD_CIRCLE_OUTLINE,
+                                        icon_color="#1d4ed8",
+                                        tooltip="Dodaj wynik",
+                                        data={"id": record_id, "type": game_type},
+                                        on_click=self.handle_add_result,
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.DELETE_OUTLINE,
+                                        icon_color="#b91c1c",
+                                        tooltip="Usuń",
+                                        data=record_id,
+                                        on_click=self.handle_delete,
+                                    ),
+                                ],
+                                spacing=0,
+                            ),
+                            width=70,
+                        ),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                ),
+                bgcolor=bg_color,
+                border_radius=6,
+                padding=ft.Padding.symmetric(horizontal=10, vertical=8),
             )
-            
-            self.data_table.rows.append(row)  # type: ignore
-        
+            self.records_list.controls.append(row_widget)  # type: ignore
+
         # Aktualizuj statystyki
         self.stats_text.value = f"Rekordów w archiwum: {len(records)}"
         self._refresh_stats()
@@ -632,7 +720,7 @@ class ArchiveTabFlet:
         self.page.update()  # type: ignore
     
     def add_custom_numbers_dialog(self, e: Any) -> None:
-        """Dialog do wprowadzenia własnych liczb do archiwum"""
+        """Dialog do wprowadzenia własnych liczb do archiwum (obsługuje wiele zestawów)"""
         game_dropdown = ft.Dropdown(
             label="Wybierz grę",
             value="Lotto",
@@ -643,85 +731,140 @@ class ArchiveTabFlet:
             width=250,
         )
 
-        main_entry = ft.TextField(
-            label="Liczby Lotto (6 liczb z 1-49)",
-            hint_text="Przykład: 1 12 23 34 45 49",
-            width=400,
-        )
+        # Dynamiczna lista wpisów: każdy wpis to dict {"main": TextField, "extra": TextField | None}
+        entries: list[dict] = []
+        entries_column = ft.Column(spacing=8, tight=True, scroll=ft.ScrollMode.AUTO)
 
-        extra_entry = ft.TextField(
-            label="Gwiazdy (2 liczby z 1-12)",
-            hint_text="Przykład: 3 7",
-            width=400,
-            visible=False,
-        )
+        def is_euro() -> bool:
+            return game_dropdown.value == "Eurojackpot"
+
+        def make_entry_row(idx: int) -> None:
+            main_f = ft.TextField(
+                label=f"Zestaw {idx + 1} – " + ("główne (5 z 1-50)" if is_euro() else "Lotto (6 z 1-49)"),
+                hint_text="np. 1 12 23 34 45" if is_euro() else "np. 1 12 23 34 45 49",
+                width=290,
+            )
+            extra_f: ft.TextField | None = None
+            if is_euro():
+                extra_f = ft.TextField(
+                    label=f"Gwiazdy {idx + 1}",
+                    hint_text="np. 3 7",
+                    width=130,
+                )
+            entry: dict = {"main": main_f, "extra": extra_f}
+            entries.append(entry)
+
+            def on_delete(ev: Any, ent: dict = entry) -> None:  # type: ignore
+                if len(entries) <= 1:
+                    return
+                i = entries.index(ent)
+                entries.remove(ent)
+                entries_column.controls.pop(i)
+                # Przenumerowanie etykiet
+                for j, en in enumerate(entries):
+                    en["main"].label = f"Zestaw {j + 1} – " + ("główne (5 z 1-50)" if is_euro() else "Lotto (6 z 1-49)")
+                    if en["extra"]:
+                        en["extra"].label = f"Gwiazdy {j + 1}"
+                self.page.update()  # type: ignore
+
+            del_btn = ft.IconButton(
+                icon=ft.Icons.REMOVE_CIRCLE_OUTLINE,
+                icon_color="#ef4444",
+                on_click=on_delete,
+                icon_size=16,
+                tooltip="Usuń zestaw",
+            )
+            row_controls: list[ft.Control] = [main_f]
+            if extra_f:
+                row_controls.append(extra_f)
+            row_controls.append(del_btn)
+            entries_column.controls.append(
+                ft.Row(row_controls, spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+            )
+
+        def on_add_entry(ev: Any) -> None:  # type: ignore
+            if len(entries) >= 10:
+                self.show_snackbar("Maksymalnie 10 zestawów w kuponie!", "#b91c1c")
+                return
+            make_entry_row(len(entries))
+            self.page.update()  # type: ignore
 
         def on_game_change(ev: Any) -> None:  # type: ignore
-            if game_dropdown.value == "Eurojackpot":
-                main_entry.label = "Liczby główne (5 liczb z 1-50)"
-                main_entry.hint_text = "Przykład: 1 12 23 34 45"
-                extra_entry.visible = True
-            else:
-                main_entry.label = "Liczby Lotto (6 liczb z 1-49)"
-                main_entry.hint_text = "Przykład: 1 12 23 34 45 49"
-                extra_entry.visible = False
+            entries.clear()
+            entries_column.controls.clear()
+            make_entry_row(0)
             self.page.update()  # type: ignore
 
         game_dropdown.on_select = on_game_change
 
+        # Inicjalizacja pierwszego wpisu
+        make_entry_row(0)
+
         def save_custom(ev: Any) -> None:  # type: ignore
             try:
-                game_type = game_dropdown.value
-                main_text = (main_entry.value or "").strip()
-                if not main_text:
-                    self.show_snackbar("Wprowadź liczby!", "#b91c1c")
+                game = game_dropdown.value
+                main_sets_list: list[list[int]] = []
+                star_sets_list: list[list[int]] = []
+
+                for i, ent in enumerate(entries):
+                    main_text = (ent["main"].value or "").strip()
+                    if not main_text:
+                        continue  # Pomiń puste zestawy
+                    main_nums = [int(x) for x in main_text.split()]
+
+                    if game == "Lotto":
+                        if len(main_nums) != 6:
+                            self.show_snackbar(f"Zestaw {i + 1}: Lotto wymaga dokładnie 6 liczb!", "#b91c1c")
+                            return
+                        if any(n < 1 or n > 49 for n in main_nums):
+                            self.show_snackbar(f"Zestaw {i + 1}: liczby muszą być z zakresu 1-49!", "#b91c1c")
+                            return
+                        if len(set(main_nums)) != 6:
+                            self.show_snackbar(f"Zestaw {i + 1}: liczby nie mogą się powtarzać!", "#b91c1c")
+                            return
+                        main_sets_list.append(sorted(main_nums))
+                    else:  # Eurojackpot
+                        if len(main_nums) != 5:
+                            self.show_snackbar(f"Zestaw {i + 1}: Eurojackpot wymaga 5 liczb głównych!", "#b91c1c")
+                            return
+                        if any(n < 1 or n > 50 for n in main_nums):
+                            self.show_snackbar(f"Zestaw {i + 1}: liczby główne muszą być z zakresu 1-50!", "#b91c1c")
+                            return
+                        if len(set(main_nums)) != 5:
+                            self.show_snackbar(f"Zestaw {i + 1}: liczby główne nie mogą się powtarzać!", "#b91c1c")
+                            return
+                        extra_text = (ent["extra"].value or "").strip() if ent["extra"] else ""
+                        if not extra_text:
+                            self.show_snackbar(f"Zestaw {i + 1}: wprowadź gwiazdy!", "#b91c1c")
+                            return
+                        extra_nums = [int(x) for x in extra_text.split()]
+                        if len(extra_nums) != 2:
+                            self.show_snackbar(f"Zestaw {i + 1}: Eurojackpot wymaga dokładnie 2 gwiazd!", "#b91c1c")
+                            return
+                        if any(n < 1 or n > 12 for n in extra_nums):
+                            self.show_snackbar(f"Zestaw {i + 1}: gwiazdy muszą być z zakresu 1-12!", "#b91c1c")
+                            return
+                        if len(set(extra_nums)) != 2:
+                            self.show_snackbar(f"Zestaw {i + 1}: gwiazdy nie mogą się powtarzać!", "#b91c1c")
+                            return
+                        main_sets_list.append(sorted(main_nums))
+                        star_sets_list.append(sorted(extra_nums))
+
+                if not main_sets_list:
+                    self.show_snackbar("Wprowadź przynajmniej jeden zestaw liczb!", "#b91c1c")
                     return
-                main_nums = [int(x) for x in main_text.split()]
 
-                if game_type == "Lotto":
-                    if len(main_nums) != 6:
-                        self.show_snackbar("Lotto wymaga dokładnie 6 liczb!", "#b91c1c")
-                        return
-                    if any(n < 1 or n > 49 for n in main_nums):
-                        self.show_snackbar("Liczby Lotto muszą być z zakresu 1-49!", "#b91c1c")
-                        return
-                    if len(set(main_nums)) != 6:
-                        self.show_snackbar("Liczby nie mogą się powtarzać!", "#b91c1c")
-                        return
-                    self.database.add_lotto_record(sorted(main_nums))
-                else:  # Eurojackpot
-                    if len(main_nums) != 5:
-                        self.show_snackbar("Eurojackpot wymaga dokładnie 5 liczb głównych!", "#b91c1c")
-                        return
-                    if any(n < 1 or n > 50 for n in main_nums):
-                        self.show_snackbar("Liczby główne muszą być z zakresu 1-50!", "#b91c1c")
-                        return
-                    if len(set(main_nums)) != 5:
-                        self.show_snackbar("Liczby główne nie mogą się powtarzać!", "#b91c1c")
-                        return
-
-                    extra_text = (extra_entry.value or "").strip()
-                    if not extra_text:
-                        self.show_snackbar("Wprowadź gwiazdy!", "#b91c1c")
-                        return
-                    extra_nums = [int(x) for x in extra_text.split()]
-
-                    if len(extra_nums) != 2:
-                        self.show_snackbar("Eurojackpot wymaga dokładnie 2 gwiazd!", "#b91c1c")
-                        return
-                    if any(n < 1 or n > 12 for n in extra_nums):
-                        self.show_snackbar("Gwiazdy muszą być z zakresu 1-12!", "#b91c1c")
-                        return
-                    if len(set(extra_nums)) != 2:
-                        self.show_snackbar("Gwiazdy nie mogą się powtarzać!", "#b91c1c")
-                        return
-
-                    self.database.add_eurojackpot_record(sorted(main_nums), sorted(extra_nums))
+                if game == "Lotto":
+                    self.database.add_lotto_record(main_sets_list)
+                else:
+                    self.database.add_eurojackpot_record(main_sets_list, star_sets_list)
 
                 self.refresh_archive()
                 dialog.open = False
                 self.page.update()  # type: ignore
-                self.show_snackbar(f"Własne liczby {game_type} dodane do archiwum!", "#15803d")
+                n = len(main_sets_list)
+                label = f"{n} zestawy" if n in (2, 3, 4) else (f"{n} zestawów" if n > 4 else "1 zestaw")
+                self.show_snackbar(f"Kupon {game} ({label}) dodany do archiwum!", "#15803d")
 
             except ValueError:
                 self.show_snackbar("Wprowadź poprawne liczby całkowite oddzielone spacjami!", "#b91c1c")
@@ -738,18 +881,23 @@ class ArchiveTabFlet:
                     [
                         game_dropdown,
                         ft.Container(height=10),
-                        main_entry,
-                        ft.Container(height=5),
-                        extra_entry,
+                        entries_column,
+                        ft.Container(height=6),
+                        ft.TextButton(
+                            "➕ Dodaj kolejny zestaw (maks. 10)",
+                            on_click=on_add_entry,
+                        ),
                     ],
                     tight=True,
-                    spacing=5,
+                    spacing=0,
+                    scroll=ft.ScrollMode.AUTO,
                 ),
-                width=450,
+                width=520,
+                height=420,
             ),
             actions=[
                 ft.TextButton("Anuluj", on_click=cancel_dialog),
-                ft.Button("✓ Dodaj", on_click=save_custom, bgcolor="#15803d", color="white"),
+                ft.Button("✓ Archiwizuj kupon", on_click=save_custom, bgcolor="#15803d", color="white"),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -846,13 +994,16 @@ class ArchiveTabFlet:
                     ),
                     ft.Container(height=15),
                     
-                    # Tabela + Panel statystyk
+                    # Lista rekordów + Panel statystyk
                     ft.Row(
                         [
                             ft.Container(
                                 content=ft.Column(
-                                    [self.data_table],
-                                    scroll=ft.ScrollMode.AUTO,
+                                    [
+                                        self.records_header,
+                                        self.records_list,
+                                    ],
+                                    spacing=0,
                                     expand=True,
                                 ),
                                 border_radius=10,

@@ -5,7 +5,7 @@ from database import LottomatDatabase
 from archive_tab_flet import ArchiveTabFlet
 from typing import Any
 
-VERSION = "1.1"
+VERSION = "1.2"
 
 
 class LottomatApp:
@@ -40,6 +40,17 @@ class LottomatApp:
         self.lotto_numbers: list[int] = []
         self.euro_main_numbers: list[int] = []
         self.euro_star_numbers: list[int] = []
+
+        # Pending sets (bufor kuponu – wiele zestawów przed archiwizacją)
+        self.lotto_pending_sets: list[list[int]] = []
+        # Każdy element: (main_numbers, star_numbers)
+        self.euro_pending_sets: list[tuple[list[int], list[int]]] = []
+
+        # Kontenery i teksty dla pending sets
+        self.lotto_pending_container = ft.Column(spacing=4)
+        self.lotto_pending_count_text = ft.Text("Zestawy w kuponie: 0/10", size=12, color="#6b7280")
+        self.euro_pending_container = ft.Column(spacing=4)
+        self.euro_pending_count_text = ft.Text("Zestawy w kuponie: 0/10", size=12, color="#6b7280")
         
         # Baza danych
         self.database = LottomatDatabase()
@@ -126,27 +137,186 @@ class LottomatApp:
         self.page.set_clipboard(text)
         self.show_snackbar("Liczby Eurojackpot skopiowane do schowka! ✓", "#15803d")
     
-    def archive_lotto(self, e: Any) -> None:  # type: ignore
-        """Dodanie liczb Lotto do archiwum"""
+    def _refresh_lotto_pending_display(self) -> None:
+        """Odświeża widok zestawów oczekujących w kuponie Lotto"""
+        self.lotto_pending_container.controls.clear()
+        for i, numbers in enumerate(self.lotto_pending_sets):
+            balls: list[ft.Control] = [
+                ft.Container(
+                    content=ft.Text(str(n), size=11, weight=ft.FontWeight.BOLD, color="white"),
+                    bgcolor=self.lotto_color,
+                    width=30, height=30, border_radius=15,
+                    alignment=ft.alignment.Alignment.CENTER,
+                )
+                for n in numbers
+            ]
+
+            def make_remove_lotto(idx: int):
+                def on_remove(e: Any) -> None:  # type: ignore
+                    self.lotto_pending_sets.pop(idx)
+                    self._refresh_lotto_pending_display()
+                    self.page.update()  # type: ignore
+                return on_remove
+
+            row: ft.Control = ft.Row(
+                [
+                    ft.Text(f"{i + 1}.", size=11, color="#6b7280", width=18),
+                    *balls,
+                    ft.IconButton(
+                        icon=ft.Icons.CLOSE,
+                        icon_size=14,
+                        icon_color="#9ca3af",
+                        on_click=make_remove_lotto(i),
+                        tooltip="Usuń zestaw",
+                    ),
+                ],
+                spacing=4,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+            self.lotto_pending_container.controls.append(row)
+        count = len(self.lotto_pending_sets)
+        self.lotto_pending_count_text.value = f"Zestawy w kuponie: {count}/10"
+
+    def _add_to_lotto_pending(self, e: Any) -> None:  # type: ignore
+        """Dodaje bieżący zestaw Lotto do kuponu"""
         if not self.lotto_numbers:
+            self.show_snackbar("Najpierw wygeneruj liczby!", "#b91c1c")
             return
-        
-        self.database.add_lotto_record(self.lotto_numbers)
-        self.show_snackbar("Liczby Lotto dodane do archiwum! 💾", "#1d4ed8")
-        # Odświeżenie archiwum jeśli jest otwarte
-        if self.archive_view is not None:
-            self.archive_view.refresh_archive()
-    
-    def archive_eurojackpot(self, e: Any) -> None:  # type: ignore
-        """Dodanie liczb Eurojackpot do archiwum"""
+        if len(self.lotto_pending_sets) >= 10:
+            self.show_snackbar("Maksymalnie 10 zestawów w kuponie!", "#b91c1c")
+            return
+        self.lotto_pending_sets.append(self.lotto_numbers[:])
+        self._refresh_lotto_pending_display()
+        self.lotto_numbers = []
+        self.lotto_balls_container.controls.clear()
+        self.page.update()  # type: ignore
+
+    def _clear_lotto_pending(self, e: Any) -> None:  # type: ignore
+        """Czyści kupon Lotto"""
+        self.lotto_pending_sets.clear()
+        self._refresh_lotto_pending_display()
+        self.page.update()  # type: ignore
+
+    def _refresh_euro_pending_display(self) -> None:
+        """Odświeża widok zestawów oczekujących w kuponie Eurojackpot"""
+        self.euro_pending_container.controls.clear()
+        for i, (main_nums, star_nums) in enumerate(self.euro_pending_sets):
+            main_balls: list[ft.Control] = [
+                ft.Container(
+                    content=ft.Text(str(n), size=11, weight=ft.FontWeight.BOLD, color="white"),
+                    bgcolor=self.euro_color,
+                    width=30, height=30, border_radius=15,
+                    alignment=ft.alignment.Alignment.CENTER,
+                )
+                for n in main_nums
+            ]
+            star_balls: list[ft.Control] = [
+                ft.Container(
+                    content=ft.Text(str(n), size=11, weight=ft.FontWeight.BOLD, color="white"),
+                    bgcolor=self.star_color,
+                    width=30, height=30, border_radius=15,
+                    alignment=ft.alignment.Alignment.CENTER,
+                )
+                for n in star_nums
+            ]
+
+            def make_remove_euro(idx: int):
+                def on_remove(e: Any) -> None:  # type: ignore
+                    self.euro_pending_sets.pop(idx)
+                    self._refresh_euro_pending_display()
+                    self.page.update()  # type: ignore
+                return on_remove
+
+            row: ft.Control = ft.Row(
+                [
+                    ft.Text(f"{i + 1}.", size=11, color="#6b7280", width=18),
+                    *main_balls,
+                    ft.Text("|", size=12, color="#9ca3af"),
+                    *star_balls,
+                    ft.IconButton(
+                        icon=ft.Icons.CLOSE,
+                        icon_size=14,
+                        icon_color="#9ca3af",
+                        on_click=make_remove_euro(i),
+                        tooltip="Usuń zestaw",
+                    ),
+                ],
+                spacing=4,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+            self.euro_pending_container.controls.append(row)
+        count = len(self.euro_pending_sets)
+        self.euro_pending_count_text.value = f"Zestawy w kuponie: {count}/10"
+
+    def _add_to_euro_pending(self, e: Any) -> None:  # type: ignore
+        """Dodaje bieżący zestaw Eurojackpot do kuponu"""
         if not self.euro_main_numbers or not self.euro_star_numbers:
+            self.show_snackbar("Najpierw wygeneruj liczby!", "#b91c1c")
             return
-        
-        self.database.add_eurojackpot_record(self.euro_main_numbers, self.euro_star_numbers)
-        self.show_snackbar("Liczby Eurojackpot dodane do archiwum! 💾", "#1d4ed8")
-        # Odświeżenie archiwum jeśli jest otwarte
+        if len(self.euro_pending_sets) >= 10:
+            self.show_snackbar("Maksymalnie 10 zestawów w kuponie!", "#b91c1c")
+            return
+        self.euro_pending_sets.append((self.euro_main_numbers[:], self.euro_star_numbers[:]))
+        self._refresh_euro_pending_display()
+        self.euro_main_numbers = []
+        self.euro_star_numbers = []
+        self.euro_main_balls_container.controls.clear()
+        self.euro_star_balls_container.controls.clear()
+        self.page.update()  # type: ignore
+
+    def _clear_euro_pending(self, e: Any) -> None:  # type: ignore
+        """Czyści kupon Eurojackpot"""
+        self.euro_pending_sets.clear()
+        self._refresh_euro_pending_display()
+        self.page.update()  # type: ignore
+
+    def archive_lotto(self, e: Any) -> None:  # type: ignore
+        """Archiwizuje kupon Lotto (wszystkie zestawy z kuponu lub bieżący)"""
+        if self.lotto_pending_sets:
+            sets_to_save = self.lotto_pending_sets[:]
+        elif self.lotto_numbers:
+            sets_to_save = [self.lotto_numbers[:]]
+        else:
+            self.show_snackbar("Najpierw wygeneruj lub dodaj liczby do kuponu!", "#b91c1c")
+            return
+
+        self.database.add_lotto_record(sets_to_save)
+        self.lotto_pending_sets.clear()
+        self._refresh_lotto_pending_display()
+        self.lotto_numbers = []
+        self.lotto_balls_container.controls.clear()
+        n = len(sets_to_save)
+        label = f"{n} zestawy" if n in (2, 3, 4) else (f"{n} zestawów" if n > 4 else "1 zestaw")
+        self.show_snackbar(f"Kupon Lotto ({label}) dodany do archiwum! 💾", "#1d4ed8")
         if self.archive_view is not None:
             self.archive_view.refresh_archive()
+        self.page.update()  # type: ignore
+
+    def archive_eurojackpot(self, e: Any) -> None:  # type: ignore
+        """Archiwizuje kupon Eurojackpot (wszystkie zestawy z kuponu lub bieżący)"""
+        if self.euro_pending_sets:
+            main_sets = [m for m, _ in self.euro_pending_sets]
+            star_sets = [s for _, s in self.euro_pending_sets]
+        elif self.euro_main_numbers and self.euro_star_numbers:
+            main_sets = [self.euro_main_numbers[:]]
+            star_sets = [self.euro_star_numbers[:]]
+        else:
+            self.show_snackbar("Najpierw wygeneruj lub dodaj liczby do kuponu!", "#b91c1c")
+            return
+
+        self.database.add_eurojackpot_record(main_sets, star_sets)
+        self.euro_pending_sets.clear()
+        self._refresh_euro_pending_display()
+        self.euro_main_numbers = []
+        self.euro_star_numbers = []
+        self.euro_main_balls_container.controls.clear()
+        self.euro_star_balls_container.controls.clear()
+        n = len(main_sets)
+        label = f"{n} zestawy" if n in (2, 3, 4) else (f"{n} zestawów" if n > 4 else "1 zestaw")
+        self.show_snackbar(f"Kupon Eurojackpot ({label}) dodany do archiwum! 💾", "#1d4ed8")
+        if self.archive_view is not None:
+            self.archive_view.refresh_archive()
+        self.page.update()  # type: ignore
     
     def show_snackbar(self, message: str, color: str) -> None:
         """Pokazanie komunikatu snackbar"""
@@ -209,8 +379,8 @@ class LottomatApp:
                                 ),
                             ),
                             ft.OutlinedButton(
-                                content="💾 Dodaj do archiwum",
-                                on_click=self.archive_lotto,
+                                content="➕ Dodaj do kuponu",
+                                on_click=self._add_to_lotto_pending,
                                 style=ft.ButtonStyle(
                                     padding=ft.Padding.symmetric(horizontal=20, vertical=12),
                                 ),
@@ -218,6 +388,46 @@ class LottomatApp:
                         ],
                         spacing=10,
                         alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                    ft.Container(height=12),
+
+                    # Kupon – lista zestawów oczekujących na archiwizację
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Row(
+                                    [
+                                        self.lotto_pending_count_text,
+                                        ft.TextButton(
+                                            "Czyść kupon",
+                                            on_click=self._clear_lotto_pending,
+                                            style=ft.ButtonStyle(color="#9ca3af"),
+                                        ),
+                                    ],
+                                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                ),
+                                self.lotto_pending_container,
+                            ],
+                            spacing=4,
+                            tight=True,
+                        ),
+                        bgcolor="#f8fafc",
+                        border_radius=10,
+                        padding=10,
+                    ),
+                    ft.Container(height=10),
+
+                    # Przycisk archiwizacji kuponu
+                    ft.Button(
+                        content="💾 Archiwizuj kupon",
+                        on_click=self.archive_lotto,
+                        style=ft.ButtonStyle(
+                            bgcolor="#1d4ed8",
+                            color="white",
+                            padding=ft.Padding.symmetric(horizontal=30, vertical=15),
+                            text_style=ft.TextStyle(size=15, weight=ft.FontWeight.BOLD),
+                        ),
+                        height=50,
                     ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -300,8 +510,8 @@ class LottomatApp:
                                 ),
                             ),
                             ft.OutlinedButton(
-                                content="💾 Dodaj do archiwum",
-                                on_click=self.archive_eurojackpot,
+                                content="➕ Dodaj do kuponu",
+                                on_click=self._add_to_euro_pending,
                                 style=ft.ButtonStyle(
                                     padding=ft.Padding.symmetric(horizontal=20, vertical=12),
                                 ),
@@ -309,6 +519,46 @@ class LottomatApp:
                         ],
                         spacing=10,
                         alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                    ft.Container(height=12),
+
+                    # Kupon – lista zestawów oczekujących na archiwizację
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Row(
+                                    [
+                                        self.euro_pending_count_text,
+                                        ft.TextButton(
+                                            "Czyść kupon",
+                                            on_click=self._clear_euro_pending,
+                                            style=ft.ButtonStyle(color="#9ca3af"),
+                                        ),
+                                    ],
+                                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                ),
+                                self.euro_pending_container,
+                            ],
+                            spacing=4,
+                            tight=True,
+                        ),
+                        bgcolor="#f8fafc",
+                        border_radius=10,
+                        padding=10,
+                    ),
+                    ft.Container(height=10),
+
+                    # Przycisk archiwizacji kuponu
+                    ft.Button(
+                        content="💾 Archiwizuj kupon",
+                        on_click=self.archive_eurojackpot,
+                        style=ft.ButtonStyle(
+                            bgcolor="#1d4ed8",
+                            color="white",
+                            padding=ft.Padding.symmetric(horizontal=30, vertical=15),
+                            text_style=ft.TextStyle(size=15, weight=ft.FontWeight.BOLD),
+                        ),
+                        height=50,
                     ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,

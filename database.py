@@ -52,24 +52,29 @@ class LottomatDatabase:
             i += 1
         return i
     
-    def add_lotto_record(self, numbers: list[int]) -> int:
-        """Dodanie rekordu Lotto do archiwum"""
+    def add_lotto_record(self, sets: list[list[int]]) -> int:
+        """Dodanie rekordu Lotto do archiwum. `sets` to lista zestawów 6 liczb (maks. 10).
+        Format zapisu: zestawy oddzielone '|', liczby wewnątrz zestawu oddzielone ','.
+        """
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
-            numbers_str = ",".join(str(n) for n in numbers)
+            numbers_str = "|".join(",".join(str(n) for n in s) for s in sets)
             record_id = self._get_next_id(cursor)
             cursor.execute("""
                 INSERT INTO archive (id, game_type, numbers, created_date)
                 VALUES (?, ?, ?, ?)
             """, (record_id, "Lotto", numbers_str, datetime.now().isoformat(timespec='seconds')))
             return record_id
-    
-    def add_eurojackpot_record(self, main_numbers: list[int], star_numbers: list[int]) -> int:
-        """Dodanie rekordu Eurojackpot do archiwum"""
+
+    def add_eurojackpot_record(self, main_sets: list[list[int]], star_sets: list[list[int]]) -> int:
+        """Dodanie rekordu Eurojackpot do archiwum.
+        `main_sets` – lista zestawów liczb głównych; `star_sets` – lista zestawów gwiazd.
+        Zestawy main_sets[i] i star_sets[i] tworzą parę. Maks. 10 zestawów.
+        """
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
-            main_str = ",".join(str(n) for n in main_numbers)
-            stars_str = ",".join(str(n) for n in star_numbers)
+            main_str = "|".join(",".join(str(n) for n in s) for s in main_sets)
+            stars_str = "|".join(",".join(str(n) for n in s) for s in star_sets)
             record_id = self._get_next_id(cursor)
             cursor.execute("""
                 INSERT INTO archive (id, game_type, numbers, extra_numbers, created_date)
