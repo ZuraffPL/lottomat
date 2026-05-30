@@ -2,7 +2,7 @@
 
 **Generator szczęśliwych liczb do gier losowych** — nowoczesna aplikacja desktopowa z archiwum wyników.
 
-![Version](https://img.shields.io/badge/wersja-1.2-6366f1)
+![Version](https://img.shields.io/badge/wersja-1.3-6366f1)
 ![Python](https://img.shields.io/badge/Python-3.14-15803d)
 ![License](https://img.shields.io/badge/licencja-CC%20BY%204.0-blue)
 
@@ -18,6 +18,9 @@
 - **Kopiowanie do schowka** — szybkie skopiowanie wylosowanych liczb
 - **Tryb jasny / ciemny** — przełączanie motywu
 - **Splash screen** — ekran powitalny z informacjami o aplikacji
+- **Kwota wygranej** — dla rekordów trafionych w stopień wygranej można wpisać kwotę wygranej w PLN lub EUR
+- **Statystyki finansowe** — podsumowanie wydatków na kupony i wygranych z bilansem, osobno dla Lotto i Eurojackpot oraz łącznie
+- **Zarządzanie cenami zakładów** — edytowalna cena zakładu Lotto (domyślnie 4 PLN) i Eurojackpot (domyślnie 12,50 PLN); zmiana dotyczy tylko nowych kuponów, historyczne zachowują cenę z momentu dodania
 
 ---
 
@@ -87,6 +90,7 @@ Uruchom_Lottomat.bat  → launcher Windows
 
 | Wersja | Zmiany |
 |--------|--------|
+| 1.3 | Kwota wygranej przy trafionych stopniach, statystyki finansowe (wydatki/wygrane/bilans), zarządzanie cenami zakładów z historycznym zachowaniem ceny przy zmianie |
 | 1.2 | Kupony wielozestawowe (do 10 zestawów/zakład), auto-wysokość wierszy w archiwum, zastąpienie DataTable niestandardową listą |
 | 1.1 | Archiwum zakładów, statystyki, dodawanie własnych liczb, tryb ciemny |
 | 1.0 | Pierwsza wersja: generator Lotto i Eurojackpot |

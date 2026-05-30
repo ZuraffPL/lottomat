@@ -28,8 +28,9 @@ class ArchiveTabFlet:
                     ft.Container(ft.Text("Wynik losowania", size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
                     ft.Container(ft.Text("Wynik extra",     size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=1),
                     ft.Container(ft.Text("Trafność",        size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
+                    ft.Container(ft.Text("Wygrana",         size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=1),
                     ft.Container(ft.Text("Data",            size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=125),
-                    ft.Container(ft.Text("Akcje",           size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=70),
+                    ft.Container(ft.Text("Akcje",           size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=105),
                 ],
                 spacing=8,
             ),
@@ -98,7 +99,7 @@ class ArchiveTabFlet:
             wins = 0
 
             for rec in with_result:
-                _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _ = rec
+                _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _, _, _, _ = rec
                 act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
                 main_sets = numbers.split("|") if numbers else []
                 extra_sets = extra_numbers.split("|") if extra_numbers else []
@@ -179,7 +180,7 @@ class ArchiveTabFlet:
         lotto_res = [r for r in all_records if r[1] == "Lotto" and r[4]]
         lotto_sets_total = 0
         for rec in lotto_res:
-            _, _, numbers, _, actual_numbers, _, _ = rec
+            _, _, numbers, _, actual_numbers, _, _, _, _, _ = rec
             act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
             for s in (numbers.split("|") if numbers else []):
                 gen_nums = set(s.split(",")) if s else set()
@@ -223,7 +224,7 @@ class ArchiveTabFlet:
         euro_res = [r for r in all_records if r[1] == "Eurojackpot" and r[4]]
         euro_sets_total = 0
         for rec in euro_res:
-            _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _ = rec
+            _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _, _, _, _ = rec
             act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
             act_extra = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
             main_sets = numbers.split("|") if numbers else []
@@ -265,6 +266,103 @@ class ArchiveTabFlet:
         )
         win_ratio_controls.append(ft.Container(height=8))
 
+        # --- Finanse ---
+        win_ratio_controls.append(ft.Container(height=2, bgcolor="#e5e7eb"))
+        win_ratio_controls.append(ft.Container(height=8))
+        win_ratio_controls.append(
+            ft.Text("💰 Finanse", size=15, weight=ft.FontWeight.BOLD)
+        )
+        win_ratio_controls.append(ft.Container(height=6))
+
+        lotto_price_label = self.database.get_lotto_price()
+        euro_price_label = self.database.get_eurojackpot_price()
+
+        for game_type, color, icon in (
+            ("Lotto", "#ef4444", "🔴"),
+            ("Eurojackpot", "#3b82f6", "🔵"),
+        ):
+            game_recs_fin = [r for r in all_records if r[1] == game_type]
+            n_coupons = len(game_recs_fin)
+            n_sets = sum(
+                len(r[2].split("|")) if r[2] else 1
+                for r in game_recs_fin
+            )
+            spent = sum(
+                (len(r[2].split("|")) if r[2] else 1) * (r[9] if r[9] is not None else (lotto_price_label if game_type == "Lotto" else euro_price_label))
+                for r in game_recs_fin
+            )
+            won_pln = sum(r[7] for r in game_recs_fin if r[7] is not None and r[8] == "PLN")
+            won_eur = sum(r[7] for r in game_recs_fin if r[7] is not None and r[8] == "EUR")
+            balance_pln = won_pln - spent
+
+            fin_section: list[ft.Control] = [
+                ft.Text(f"{icon} {game_type}", size=13, weight=ft.FontWeight.BOLD, color=color),
+                ft.Text(f"Kupony: {n_coupons}  |  Zakłady: {n_sets}", size=11, color="#6b7280"),
+                ft.Text(f"Wydano: {spent:,.2f} PLN", size=11, color="#374151"),
+            ]
+            if won_pln > 0 or won_eur > 0:
+                if won_pln > 0:
+                    fin_section.append(ft.Text(f"Wygrano: {won_pln:,.2f} PLN", size=11, color="#15803d"))
+                if won_eur > 0:
+                    fin_section.append(ft.Text(f"Wygrano: {won_eur:,.2f} EUR", size=11, color="#15803d"))
+            else:
+                fin_section.append(ft.Text("Wygrano: 0,00 PLN", size=11, color="#6b7280"))
+            fin_section.append(
+                ft.Text(
+                    f"Bilans PLN: {balance_pln:+,.2f}",
+                    size=12, weight=ft.FontWeight.W_500,
+                    color="#15803d" if balance_pln >= 0 else "#b91c1c",
+                )
+            )
+            win_ratio_controls.append(
+                ft.Row([
+                    ft.Container(width=3, bgcolor=color, border_radius=2),
+                    ft.Container(
+                        content=ft.Column(fin_section, spacing=3, tight=True),
+                        expand=True,
+                        padding=ft.Padding.only(left=8, top=4, bottom=4),
+                    ),
+                ], spacing=0)
+            )
+            win_ratio_controls.append(ft.Container(height=8))
+
+        # Łączne finanse
+        total_spent = sum(
+            (len(r[2].split("|")) if r[2] else 1) * (r[9] if r[9] is not None else (lotto_price_label if r[1] == "Lotto" else euro_price_label))
+            for r in all_records
+        )
+        total_won_pln = sum(r[7] for r in all_records if r[7] is not None and r[8] == "PLN")
+        total_won_eur = sum(r[7] for r in all_records if r[7] is not None and r[8] == "EUR")
+        total_balance = total_won_pln - total_spent
+
+        summary: list[ft.Control] = [
+            ft.Text("📊 Łącznie", size=13, weight=ft.FontWeight.BOLD),
+            ft.Text(f"Wydano: {total_spent:,.2f} PLN", size=11, color="#374151"),
+        ]
+        if total_won_pln > 0:
+            summary.append(ft.Text(f"Wygrano: {total_won_pln:,.2f} PLN", size=11, color="#15803d"))
+        if total_won_eur > 0:
+            summary.append(ft.Text(f"Wygrano: {total_won_eur:,.2f} EUR", size=11, color="#15803d"))
+        if total_won_pln == 0 and total_won_eur == 0:
+            summary.append(ft.Text("Wygrano: 0,00 PLN", size=11, color="#6b7280"))
+        summary.append(
+            ft.Text(
+                f"Bilans PLN: {total_balance:+,.2f}",
+                size=12, weight=ft.FontWeight.BOLD,
+                color="#15803d" if total_balance >= 0 else "#b91c1c",
+            )
+        )
+        win_ratio_controls.append(
+            ft.Row([
+                ft.Container(width=3, bgcolor="#6366f1", border_radius=2),
+                ft.Container(
+                    content=ft.Column(summary, spacing=3, tight=True),
+                    expand=True,
+                    padding=ft.Padding.only(left=8, top=4, bottom=4),
+                ),
+            ], spacing=0)
+        )
+
         # --- Najczęstsze liczby (prawa kolumna) ---
         freq: dict[str, dict[str, dict[str, int]]] = {
             "Lotto":       {"main": {}},
@@ -273,7 +371,7 @@ class ArchiveTabFlet:
         draws: dict[str, int] = {"Lotto": 0, "Eurojackpot": 0}
 
         for rec in all_records:
-            _, rec_game, _, _, actual_numbers, actual_extra_numbers, _ = rec
+            _, rec_game, _, _, actual_numbers, actual_extra_numbers, _, _, _, _ = rec
             if not actual_numbers or rec_game not in freq:
                 continue
             draws[rec_game] += 1
@@ -450,10 +548,30 @@ class ArchiveTabFlet:
             )
         return ft.Column(rows, spacing=3, tight=True)
 
+    def _record_has_prize_tier(
+        self,
+        game_type: str,
+        main_sets: list[str],
+        extra_sets: list[str],
+        act_nums: set[str],
+        act_extra: set[str],
+    ) -> bool:
+        """Sprawdza czy co najmniej jeden zestaw w rekordzie trafia w stopień wygranej"""
+        for idx, s in enumerate(main_sets):
+            if game_type == "Lotto":
+                tier_name, _ = self._lotto_prize_tier(len(set(s.split(",")) & act_nums))
+            else:
+                hits_m = len(set(s.split(",")) & act_nums)
+                hits_e = len(set(extra_sets[idx].split(",")) & act_extra) if idx < len(extra_sets) else 0
+                tier_name, _ = self._eurojackpot_prize_tier(hits_m, hits_e)
+            if tier_name:
+                return True
+        return False
+
     def refresh_archive(self):
         """Odświeżenie listy rekordów"""
-        # Pobierz rekordy
-        records: list[tuple[int, str, str, str | None, str | None, str | None, str]]
+        from database import Record  # type: ignore
+        records: list[Record]
         if self.filter_value == "Wszystkie":
             records = self.database.get_all_records()
         else:
@@ -464,7 +582,7 @@ class ArchiveTabFlet:
 
         # Wypełnienie listy
         for record in records:
-            record_id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date = record
+            record_id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date, prize_amount, prize_currency, ticket_price = record
 
             # Parsowanie zestawów (separator '|'; stare rekordy bez '|' = jeden zestaw)
             main_sets: list[str] = numbers.split("|") if numbers else []
@@ -487,6 +605,20 @@ class ArchiveTabFlet:
                 )
             else:
                 accuracy_display: ft.Control = ft.Text("-", size=12, color="#6b7280")
+
+            # Wyświetlanie wygranej
+            has_prize_tier = bool(actual_numbers) and self._record_has_prize_tier(
+                game_type, main_sets, extra_sets, act_nums, act_extra
+            )
+            if prize_amount is not None and prize_currency is not None:
+                prize_display: ft.Control = ft.Text(
+                    f"{prize_amount:,.2f} {prize_currency}",
+                    size=11, weight=ft.FontWeight.BOLD, color="#15803d",
+                )
+            elif has_prize_tier:
+                prize_display = ft.Text("— dodaj →", size=10, color="#b45309", italic=True)
+            else:
+                prize_display = ft.Text("-", size=12, color="#9ca3af")
 
             # Formatowanie daty
             try:
@@ -519,6 +651,7 @@ class ArchiveTabFlet:
                         ft.Container(ft.Text(result_display, size=12), expand=2),
                         ft.Container(ft.Text(result_extra_display, size=12), expand=1),
                         ft.Container(accuracy_display, expand=2),
+                        ft.Container(prize_display, expand=1),
                         ft.Container(ft.Text(date_display, size=11, color="#6b7280"), width=125),
                         ft.Container(
                             ft.Row(
@@ -531,6 +664,14 @@ class ArchiveTabFlet:
                                         on_click=self.handle_add_result,
                                     ),
                                     ft.IconButton(
+                                        icon=ft.Icons.ATTACH_MONEY,
+                                        icon_color="#15803d",
+                                        tooltip="Wpisz kwotę wygranej",
+                                        data={"id": record_id, "type": game_type},
+                                        on_click=self.handle_add_prize,
+                                        visible=has_prize_tier,
+                                    ),
+                                    ft.IconButton(
                                         icon=ft.Icons.DELETE_OUTLINE,
                                         icon_color="#b91c1c",
                                         tooltip="Usuń",
@@ -540,7 +681,7 @@ class ArchiveTabFlet:
                                 ],
                                 spacing=0,
                             ),
-                            width=70,
+                            width=105,
                         ),
                     ],
                     spacing=8,
@@ -571,6 +712,11 @@ class ArchiveTabFlet:
         """Handler dla przycisku usuń"""
         record_id = e.control.data
         self.delete_record(record_id)
+
+    def handle_add_prize(self, e: Any) -> None:  # type: ignore
+        """Handler dla przycisku wpisz kwotę wygranej"""
+        data = e.control.data
+        self.add_prize_dialog(data["id"], data["type"])
     
     def clear_archive(self, e: Any) -> None:  # type: ignore
         """Wyczyszczenie całego archiwum"""
@@ -906,6 +1052,138 @@ class ArchiveTabFlet:
         dialog.open = True
         self.page.update()  # type: ignore
 
+    def add_prize_dialog(self, record_id: int, game_type: str) -> None:
+        """Dialog do wpisania kwoty wygranej"""
+        amount_field = ft.TextField(
+            label="Kwota wygranej",
+            hint_text="np. 150.00",
+            width=220,
+            keyboard_type=ft.KeyboardType.NUMBER,
+        )
+        currency_dropdown = ft.Dropdown(
+            label="Waluta",
+            value="PLN",
+            options=[
+                ft.dropdown.Option("PLN"),
+                ft.dropdown.Option("EUR"),
+            ],
+            width=110,
+        )
+
+        def save_prize(e: Any) -> None:  # type: ignore
+            try:
+                text = (amount_field.value or "").strip().replace(",", ".")
+                if not text:
+                    self.show_snackbar("Wprowadź kwotę wygranej!", "#b91c1c")
+                    return
+                amount = float(text)
+                if amount < 0:
+                    self.show_snackbar("Kwota nie może być ujemna!", "#b91c1c")
+                    return
+                currency = currency_dropdown.value or "PLN"
+                self.database.update_prize_amount(record_id, amount, currency)
+                self.refresh_archive()
+                dialog.open = False
+                self.page.update()  # type: ignore
+                self.show_snackbar(f"Wygrana {amount:,.2f} {currency} zapisana!", "#15803d")
+            except ValueError:
+                self.show_snackbar("Wprowadź poprawną kwotę (np. 150.00)!", "#b91c1c")
+
+        def cancel_dialog(e: Any) -> None:  # type: ignore
+            dialog.open = False
+            self.page.update()  # type: ignore
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Wpisz kwotę wygranej – #{record_id} ({game_type})"),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text("Podaj kwotę wygranej i walutę.", size=13),
+                        ft.Container(height=10),
+                        ft.Row([amount_field, currency_dropdown], spacing=10),
+                    ],
+                    tight=True,
+                    spacing=5,
+                ),
+                width=380,
+            ),
+            actions=[
+                ft.TextButton("Anuluj", on_click=cancel_dialog),
+                ft.Button("✓ Zapisz", on_click=save_prize, bgcolor="#15803d", color="white"),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.overlay.append(dialog)  # type: ignore
+        dialog.open = True
+        self.page.update()  # type: ignore
+
+    def show_price_settings_dialog(self, e: Any) -> None:  # type: ignore
+        """Dialog do zmiany cen zakładów"""
+        lotto_field = ft.TextField(
+            label="Cena zakładu Lotto (PLN)",
+            value=str(self.database.get_lotto_price()),
+            width=220,
+            keyboard_type=ft.KeyboardType.NUMBER,
+        )
+        euro_field = ft.TextField(
+            label="Cena zakładu Eurojackpot (PLN)",
+            value=str(self.database.get_eurojackpot_price()),
+            width=220,
+            keyboard_type=ft.KeyboardType.NUMBER,
+        )
+
+        def save_prices(ev: Any) -> None:  # type: ignore
+            try:
+                lotto_val = float((lotto_field.value or "").strip().replace(",", "."))
+                euro_val = float((euro_field.value or "").strip().replace(",", "."))
+                if lotto_val <= 0 or euro_val <= 0:
+                    self.show_snackbar("Ceny muszą być większe od zera!", "#b91c1c")
+                    return
+                self.database.set_setting("lotto_price", str(lotto_val))
+                self.database.set_setting("eurojackpot_price", str(euro_val))
+                self.refresh_archive()
+                dialog.open = False
+                self.page.update()  # type: ignore
+                self.show_snackbar("Ceny zakładów zaktualizowane! Nowe kupony będą naliczane wg nowych cen.", "#15803d")
+            except ValueError:
+                self.show_snackbar("Wprowadź poprawne wartości liczbowe!", "#b91c1c")
+
+        def cancel_dialog(ev: Any) -> None:  # type: ignore
+            dialog.open = False
+            self.page.update()  # type: ignore
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Ustawienia cen zakładów"),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "Zmiana cen dotyczy wyłącznie nowych kuponów.\n"
+                            "Kupony już dodane zachowają cenę z momentu dodania.",
+                            size=12, color="#6b7280",
+                        ),
+                        ft.Container(height=12),
+                        lotto_field,
+                        ft.Container(height=8),
+                        euro_field,
+                    ],
+                    tight=True,
+                    spacing=5,
+                ),
+                width=280,
+            ),
+            actions=[
+                ft.TextButton("Anuluj", on_click=cancel_dialog),
+                ft.Button("✓ Zapisz", on_click=save_prices, bgcolor="#6366f1", color="white"),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.overlay.append(dialog)  # type: ignore
+        dialog.open = True
+        self.page.update()  # type: ignore
+
     def show_snackbar(self, message: str, color: str) -> None:
         """Pokazanie komunikatu snackbar"""
         self.page.snack_bar = ft.SnackBar(  # type: ignore
@@ -942,6 +1220,14 @@ class ArchiveTabFlet:
                                             style=ft.ButtonStyle(
                                                 bgcolor="#d1fae5",
                                                 color="#065f46",
+                                            ),
+                                        ),
+                                        ft.Button(
+                                            content="⚙️ Ceny zakładów",
+                                            on_click=self.show_price_settings_dialog,
+                                            style=ft.ButtonStyle(
+                                                bgcolor="#ede9fe",
+                                                color="#4c1d95",
                                             ),
                                         ),
                                         ft.Button(
