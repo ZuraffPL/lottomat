@@ -1014,6 +1014,8 @@ class ArchiveTabFlet:
 
             except ValueError:
                 self.show_snackbar("Wprowadź poprawne liczby całkowite oddzielone spacjami!", "#b91c1c")
+            except Exception as ex:
+                self.show_snackbar(f"Błąd: {ex}", "#b91c1c")
 
         def cancel_dialog(ev: Any) -> None:  # type: ignore
             dialog.open = False
@@ -1186,13 +1188,13 @@ class ArchiveTabFlet:
 
     def show_snackbar(self, message: str, color: str) -> None:
         """Pokazanie komunikatu snackbar"""
-        self.page.snack_bar = ft.SnackBar(  # type: ignore
-            content=ft.Text(message, color="white"),
-            bgcolor=color,
-            duration=2000,
+        self.page.show_dialog(  # type: ignore
+            ft.SnackBar(
+                content=ft.Text(message, color="white"),
+                bgcolor=color,
+                duration=2000,
+            )
         )
-        self.page.snack_bar.open = True  # type: ignore
-        self.page.update()  # type: ignore
     
     def build(self) -> ft.Container:
         """Budowanie interfejsu zakładki archiwum"""

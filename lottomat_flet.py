@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 import flet as ft  # type: ignore
 import random
 from database import LottomatDatabase
@@ -117,13 +118,23 @@ class LottomatApp:
         
         self.page.update()  # type: ignore
     
+    def _copy_to_clipboard(self, text: str) -> None:
+        """Kopiuje tekst do schowka systemowego (Windows)"""
+        proc = subprocess.Popen(
+            ["clip"],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        proc.communicate(text.encode("utf-16"))
+
     def copy_lotto_to_clipboard(self, e: Any) -> None:  # type: ignore
         """Kopiowanie liczb Lotto do schowka"""
         if not self.lotto_numbers:
             return
         
         text = " ".join(str(num) for num in self.lotto_numbers)
-        self.page.set_clipboard(text)
+        self._copy_to_clipboard(text)
         self.show_snackbar("Liczby Lotto skopiowane do schowka! ✓", "#15803d")
     
     def copy_euro_to_clipboard(self, e: Any) -> None:  # type: ignore
@@ -134,7 +145,7 @@ class LottomatApp:
         main_text = " ".join(str(num) for num in self.euro_main_numbers)
         stars_text = " ".join(str(num) for num in self.euro_star_numbers)
         text = f"{main_text} | {stars_text}"
-        self.page.set_clipboard(text)
+        self._copy_to_clipboard(text)
         self.show_snackbar("Liczby Eurojackpot skopiowane do schowka! ✓", "#15803d")
     
     def _refresh_lotto_pending_display(self) -> None:
@@ -320,13 +331,13 @@ class LottomatApp:
     
     def show_snackbar(self, message: str, color: str) -> None:
         """Pokazanie komunikatu snackbar"""
-        self.page.snack_bar = ft.SnackBar(  # type: ignore
-            content=ft.Text(message, color="white"),
-            bgcolor=color,
-            duration=2000,
+        self.page.show_dialog(  # type: ignore
+            ft.SnackBar(
+                content=ft.Text(message, color="white"),
+                bgcolor=color,
+                duration=2000,
+            )
         )
-        self.page.snack_bar.open = True  # type: ignore
-        self.page.update()  # type: ignore
     
     def create_lotto_section(self) -> ft.Container:
         """Tworzenie sekcji dla gry Lotto"""
