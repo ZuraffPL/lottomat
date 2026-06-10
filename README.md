@@ -2,7 +2,7 @@
 
 **Generator szczęśliwych liczb do gier losowych** — nowoczesna aplikacja desktopowa z archiwum wyników.
 
-![Version](https://img.shields.io/badge/wersja-1.3-6366f1)
+![Version](https://img.shields.io/badge/wersja-1.4-6366f1)
 ![Python](https://img.shields.io/badge/Python-3.14-15803d)
 ![License](https://img.shields.io/badge/licencja-CC%20BY%204.0-blue)
 
@@ -90,6 +90,7 @@ Uruchom_Lottomat.bat  → launcher Windows
 
 | Wersja | Zmiany |
 |--------|--------|
+| 1.4 | Statystyki najczęstszych par i trójek liczb w wynikach losowania (top 5, osobno dla Lotto i Eurojackpot); poprawka kopiowania do schowka i archiwizacji własnych liczb dla Flet 0.84+ |
 | 1.3 | Kwota wygranej przy trafionych stopniach, statystyki finansowe (wydatki/wygrane/bilans), zarządzanie cenami zakładów z historycznym zachowaniem ceny przy zmianie |
 | 1.2 | Kupony wielozestawowe (do 10 zestawów/zakład), auto-wysokość wierszy w archiwum, zastąpienie DataTable niestandardową listą |
 | 1.1 | Archiwum zakładów, statystyki, dodawanie własnych liczb, tryb ciemny |

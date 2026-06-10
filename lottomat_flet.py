@@ -6,7 +6,7 @@ from database import LottomatDatabase
 from archive_tab_flet import ArchiveTabFlet
 from typing import Any
 
-VERSION = "1.3"
+VERSION = "1.4"
 
 
 class LottomatApp:

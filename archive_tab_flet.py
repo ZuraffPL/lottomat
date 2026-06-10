@@ -1,4 +1,5 @@
 import flet as ft  # type: ignore
+import itertools
 from database import LottomatDatabase
 from datetime import datetime
 from typing import Any
@@ -434,6 +435,106 @@ class ArchiveTabFlet:
                     padding=ft.Padding.only(top=4, bottom=8),
                 )
             )
+
+        # --- Najczęstsze pary i trójki ---
+        pair_triple_sections: list[tuple[str, str, str]] = [
+            ("🔴 Lotto", "Lotto", "#ef4444"),
+            ("🔵 Eurojackpot", "Eurojackpot", "#3b82f6"),
+        ]
+
+        freq_controls.append(ft.Container(height=2, bgcolor="#e5e7eb"))
+        freq_controls.append(ft.Container(height=8))
+        freq_controls.append(
+            ft.Text("👥 Najczęstsze pary", size=15, weight=ft.FontWeight.BOLD)
+        )
+        freq_controls.append(ft.Container(height=6))
+
+        for label, game, color in pair_triple_sections:
+            pair_counts: dict[tuple[str, ...], int] = {}
+            game_draws_with_result = [r for r in all_records if r[1] == game and r[4]]
+            for rec in game_draws_with_result:
+                actual_numbers = rec[4]
+                nums = sorted(n.strip() for n in actual_numbers.split(",") if n.strip())
+                for pair in itertools.combinations(nums, 2):
+                    pair_counts[pair] = pair_counts.get(pair, 0) + 1
+
+            top_pairs = sorted(pair_counts.items(), key=lambda kv: -kv[1])[:5]
+            n_draws = len(game_draws_with_result)
+
+            if top_pairs:
+                pair_rows: list[ft.Control] = [
+                    ft.Text(label, size=12, weight=ft.FontWeight.BOLD, color=color),
+                ]
+                for pair, count in top_pairs:
+                    pct = count / n_draws * 100 if n_draws > 0 else 0.0
+                    pair_rows.append(
+                        ft.Row(
+                            [
+                                ft.Container(
+                                    content=ft.Text(
+                                        f"{pair[0]} & {pair[1]}",
+                                        size=10, color="#111827",
+                                    ),
+                                    width=54,
+                                ),
+                                ft.Text(f"{count}× ({pct:.0f}%)", size=10, color="#6b7280"),
+                            ],
+                            spacing=4,
+                        )
+                    )
+                freq_controls.append(
+                    ft.Container(
+                        content=ft.Column(pair_rows, spacing=3, tight=True),
+                        padding=ft.Padding.only(top=4, bottom=8),
+                    )
+                )
+
+        freq_controls.append(ft.Container(height=2, bgcolor="#e5e7eb"))
+        freq_controls.append(ft.Container(height=8))
+        freq_controls.append(
+            ft.Text("🔺 Najczęstsze trójki", size=15, weight=ft.FontWeight.BOLD)
+        )
+        freq_controls.append(ft.Container(height=6))
+
+        for label, game, color in pair_triple_sections:
+            triple_counts: dict[tuple[str, ...], int] = {}
+            game_draws_with_result = [r for r in all_records if r[1] == game and r[4]]
+            for rec in game_draws_with_result:
+                actual_numbers = rec[4]
+                nums = sorted(n.strip() for n in actual_numbers.split(",") if n.strip())
+                for triple in itertools.combinations(nums, 3):
+                    triple_counts[triple] = triple_counts.get(triple, 0) + 1
+
+            top_triples = sorted(triple_counts.items(), key=lambda kv: -kv[1])[:5]
+            n_draws = len(game_draws_with_result)
+
+            if top_triples:
+                triple_rows: list[ft.Control] = [
+                    ft.Text(label, size=12, weight=ft.FontWeight.BOLD, color=color),
+                ]
+                for triple, count in top_triples:
+                    pct = count / n_draws * 100 if n_draws > 0 else 0.0
+                    triple_rows.append(
+                        ft.Row(
+                            [
+                                ft.Container(
+                                    content=ft.Text(
+                                        f"{triple[0]} & {triple[1]} & {triple[2]}",
+                                        size=10, color="#111827",
+                                    ),
+                                    width=80,
+                                ),
+                                ft.Text(f"{count}× ({pct:.0f}%)", size=10, color="#6b7280"),
+                            ],
+                            spacing=4,
+                        )
+                    )
+                freq_controls.append(
+                    ft.Container(
+                        content=ft.Column(triple_rows, spacing=3, tight=True),
+                        padding=ft.Padding.only(top=4, bottom=8),
+                    )
+                )
 
         # --- Składanie obu kolumn obok siebie ---
         self.stats_column.controls.append(
