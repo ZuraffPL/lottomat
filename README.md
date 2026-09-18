@@ -2,7 +2,7 @@
 
 **Generator szczęśliwych liczb do gier losowych** — nowoczesna aplikacja desktopowa z archiwum wyników.
 
-![Version](https://img.shields.io/badge/wersja-1.5-6366f1)
+![Version](https://img.shields.io/badge/wersja-1.6-6366f1)
 ![Python](https://img.shields.io/badge/Python-3.14-15803d)
 ![License](https://img.shields.io/badge/licencja-CC%20BY%204.0-blue)
 
@@ -23,6 +23,7 @@
 - **Zarządzanie cenami zakładów** — edytowalna cena zakładu Lotto (domyślnie 4 PLN) i Eurojackpot (domyślnie 12,50 PLN); zmiana dotyczy tylko nowych kuponów, historyczne zachowują cenę z momentu dodania
 - **Najczęstsze pary gwiazd** — w sekcji statystyk, obok par głównych Eurojackpot, wyświetlane są najczęstsze pary liczb dodatkowych (gwiazd)
 - **Częstotliwość najczęstszych liczb** — nowa sekcja po Finansach pokazująca co ile losowań średnio pojawia się każda z top 5 najczęstszych liczb (osobno liczby główne i gwiazdy EJ)
+- **Edycja wpisanych liczb kuponu** — w archiwum można poprawić błędnie wpisane liczby zestawu (lub wszystkich zestawów) kuponu bez konieczności jego usuwania
 
 ---
 

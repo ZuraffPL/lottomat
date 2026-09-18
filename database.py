@@ -168,6 +168,16 @@ class LottomatDatabase:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM archive")
     
+    def update_ticket_numbers(self, record_id: int, numbers: str, extra_numbers: str | None = None) -> None:
+        """Aktualizacja wpisanych liczb kuponu (poprawka pomyłki przy wpisywaniu)"""
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE archive
+                SET numbers = ?, extra_numbers = ?
+                WHERE id = ?
+            """, (numbers, extra_numbers, record_id))
+
     def update_actual_result(self, record_id: int, actual_numbers: str, actual_extra_numbers: str | None = None) -> None:
         """Aktualizacja faktycznego wyniku losowania"""
         with sqlite3.connect(self.db_name) as conn:

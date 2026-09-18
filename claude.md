@@ -4,7 +4,7 @@
 
 | Warstwa       | Technologia                        |
 |---------------|------------------------------------|
-| Język         | Python 3.14                        |
+| Język         | Python 3.14.7                        |
 | UI Framework  | Flet (Flutter-based, cross-platform) |
 | Baza danych   | SQLite3 (wbudowany moduł Python)    |
 | Stdlib        | `random`, `datetime`, `typing`      |
@@ -92,6 +92,7 @@ for item in data:
 - Używaj `ft.alignment.Alignment.CENTER` zamiast `ft.alignment.center` (zmiana w 0.80+)
 - Używaj `ft.Padding.only(...)` zamiast `ft.padding.only(...)` (zmiana w 0.80+)
 - Używaj `ft.Padding.symmetric(...)` zamiast `ft.padding.symmetric(...)` (zmiana w 0.80+)
+- Używaj `ft.BorderRadius.only(...)` / `.all(...)` / `.vertical(...)` / `.horizontal(...)` zamiast `ft.border_radius.only(...)` itp. (zmiana w 0.80+, moduł `border_radius` usunięty w 1.0)
 - Używaj `content=` zamiast `text=` w przyciskach (`ElevatedButton`, `OutlinedButton`, `TextButton`) – `text=` usunięte w 0.80+
 - Używaj `ft.Button` zamiast `ft.ElevatedButton` – `ElevatedButton` deprecated od 0.80, usunięte w 1.0
 - Używaj `on_select=` zamiast `on_change=` w `ft.Dropdown` (zmiana w 0.80+)

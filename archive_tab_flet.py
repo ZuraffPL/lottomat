@@ -31,12 +31,12 @@ class ArchiveTabFlet:
                     ft.Container(ft.Text("Trafność",        size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
                     ft.Container(ft.Text("Wygrana",         size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=1),
                     ft.Container(ft.Text("Data",            size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=125),
-                    ft.Container(ft.Text("Akcje",           size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=105),
+                    ft.Container(ft.Text("Akcje",           size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=140),
                 ],
                 spacing=8,
             ),
             bgcolor="#f1f5f9",
-            border_radius=ft.border_radius.only(top_left=8, top_right=8),
+            border_radius=ft.BorderRadius.only(top_left=8, top_right=8),
             padding=ft.Padding.symmetric(horizontal=10, vertical=10),
         )
 
@@ -899,6 +899,13 @@ class ArchiveTabFlet:
                             ft.Row(
                                 [
                                     ft.IconButton(
+                                        icon=ft.Icons.EDIT_OUTLINED,
+                                        icon_color="#6366f1",
+                                        tooltip="Edytuj wpisane liczby",
+                                        data={"id": record_id, "type": game_type, "numbers": numbers, "extra_numbers": extra_numbers},
+                                        on_click=self.handle_edit_numbers,
+                                    ),
+                                    ft.IconButton(
                                         icon=ft.Icons.ADD_CIRCLE_OUTLINE,
                                         icon_color="#1d4ed8",
                                         tooltip="Dodaj wynik",
@@ -923,7 +930,7 @@ class ArchiveTabFlet:
                                 ],
                                 spacing=0,
                             ),
-                            width=105,
+                            width=140,
                         ),
                     ],
                     spacing=8,
@@ -949,6 +956,11 @@ class ArchiveTabFlet:
         """Handler dla przycisku dodaj wynik"""
         data = e.control.data
         self.add_actual_result(data["id"], data["type"])
+
+    def handle_edit_numbers(self, e: Any) -> None:  # type: ignore
+        """Handler dla przycisku edycji wpisanych liczb kuponu"""
+        data = e.control.data
+        self.edit_ticket_numbers_dialog(data["id"], data["type"], data["numbers"], data["extra_numbers"])
     
     def handle_delete(self, e: Any) -> None:  # type: ignore
         """Handler dla przycisku usuń"""
@@ -1288,6 +1300,175 @@ class ArchiveTabFlet:
             actions=[
                 ft.TextButton("Anuluj", on_click=cancel_dialog),
                 ft.Button("✓ Archiwizuj kupon", on_click=save_custom, bgcolor="#15803d", color="white"),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self.page.overlay.append(dialog)  # type: ignore
+        dialog.open = True
+        self.page.update()  # type: ignore
+
+    def edit_ticket_numbers_dialog(
+        self, record_id: int, game_type: str, numbers: str, extra_numbers: str | None
+    ) -> None:
+        """Dialog do poprawiania błędnie wpisanych liczb kuponu (wszystkie zestawy rekordu)"""
+        is_euro = game_type == "Eurojackpot"
+        main_sets = numbers.split("|") if numbers else [""]
+        extra_sets = extra_numbers.split("|") if extra_numbers else []
+
+        entries: list[dict] = []
+        entries_column = ft.Column(spacing=8, tight=True, scroll=ft.ScrollMode.AUTO)
+
+        def make_entry_row(idx: int, main_val: str = "", extra_val: str = "") -> None:
+            main_f = ft.TextField(
+                label=f"Zestaw {idx + 1} – " + ("główne (5 z 1-50)" if is_euro else "Lotto (6 z 1-49)"),
+                hint_text="np. 1 12 23 34 45" if is_euro else "np. 1 12 23 34 45 49",
+                value=" ".join(main_val.split(",")) if main_val else "",
+                width=290,
+            )
+            extra_f: ft.TextField | None = None
+            if is_euro:
+                extra_f = ft.TextField(
+                    label=f"Gwiazdy {idx + 1}",
+                    hint_text="np. 3 7",
+                    value=" ".join(extra_val.split(",")) if extra_val else "",
+                    width=130,
+                )
+            entry: dict = {"main": main_f, "extra": extra_f}
+            entries.append(entry)
+
+            def on_delete(ev: Any, ent: dict = entry) -> None:  # type: ignore
+                if len(entries) <= 1:
+                    return
+                i = entries.index(ent)
+                entries.remove(ent)
+                entries_column.controls.pop(i)
+                for j, en in enumerate(entries):
+                    en["main"].label = f"Zestaw {j + 1} – " + ("główne (5 z 1-50)" if is_euro else "Lotto (6 z 1-49)")
+                    if en["extra"]:
+                        en["extra"].label = f"Gwiazdy {j + 1}"
+                self.page.update()  # type: ignore
+
+            del_btn = ft.IconButton(
+                icon=ft.Icons.REMOVE_CIRCLE_OUTLINE,
+                icon_color="#ef4444",
+                on_click=on_delete,
+                icon_size=16,
+                tooltip="Usuń zestaw",
+            )
+            row_controls: list[ft.Control] = [main_f]
+            if extra_f:
+                row_controls.append(extra_f)
+            row_controls.append(del_btn)
+            entries_column.controls.append(
+                ft.Row(row_controls, spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+            )
+
+        def on_add_entry(ev: Any) -> None:  # type: ignore
+            if len(entries) >= 10:
+                self.show_snackbar("Maksymalnie 10 zestawów w kuponie!", "#b91c1c")
+                return
+            make_entry_row(len(entries))
+            self.page.update()  # type: ignore
+
+        # Wypełnienie istniejącymi zestawami rekordu
+        for i, s in enumerate(main_sets):
+            make_entry_row(i, s, extra_sets[i] if i < len(extra_sets) else "")
+
+        def save_edit(ev: Any) -> None:  # type: ignore
+            try:
+                main_sets_list: list[list[int]] = []
+                star_sets_list: list[list[int]] = []
+
+                for i, ent in enumerate(entries):
+                    main_text = (ent["main"].value or "").strip()
+                    if not main_text:
+                        continue
+                    main_nums = [int(x) for x in main_text.split()]
+
+                    if game_type == "Lotto":
+                        if len(main_nums) != 6:
+                            self.show_snackbar(f"Zestaw {i + 1}: Lotto wymaga dokładnie 6 liczb!", "#b91c1c")
+                            return
+                        if any(n < 1 or n > 49 for n in main_nums):
+                            self.show_snackbar(f"Zestaw {i + 1}: liczby muszą być z zakresu 1-49!", "#b91c1c")
+                            return
+                        if len(set(main_nums)) != 6:
+                            self.show_snackbar(f"Zestaw {i + 1}: liczby nie mogą się powtarzać!", "#b91c1c")
+                            return
+                        main_sets_list.append(sorted(main_nums))
+                    else:  # Eurojackpot
+                        if len(main_nums) != 5:
+                            self.show_snackbar(f"Zestaw {i + 1}: Eurojackpot wymaga 5 liczb głównych!", "#b91c1c")
+                            return
+                        if any(n < 1 or n > 50 for n in main_nums):
+                            self.show_snackbar(f"Zestaw {i + 1}: liczby główne muszą być z zakresu 1-50!", "#b91c1c")
+                            return
+                        if len(set(main_nums)) != 5:
+                            self.show_snackbar(f"Zestaw {i + 1}: liczby główne nie mogą się powtarzać!", "#b91c1c")
+                            return
+                        extra_text = (ent["extra"].value or "").strip() if ent["extra"] else ""
+                        if not extra_text:
+                            self.show_snackbar(f"Zestaw {i + 1}: wprowadź gwiazdy!", "#b91c1c")
+                            return
+                        extra_nums = [int(x) for x in extra_text.split()]
+                        if len(extra_nums) != 2:
+                            self.show_snackbar(f"Zestaw {i + 1}: Eurojackpot wymaga dokładnie 2 gwiazd!", "#b91c1c")
+                            return
+                        if any(n < 1 or n > 12 for n in extra_nums):
+                            self.show_snackbar(f"Zestaw {i + 1}: gwiazdy muszą być z zakresu 1-12!", "#b91c1c")
+                            return
+                        if len(set(extra_nums)) != 2:
+                            self.show_snackbar(f"Zestaw {i + 1}: gwiazdy nie mogą się powtarzać!", "#b91c1c")
+                            return
+                        main_sets_list.append(sorted(main_nums))
+                        star_sets_list.append(sorted(extra_nums))
+
+                if not main_sets_list:
+                    self.show_snackbar("Wprowadź przynajmniej jeden zestaw liczb!", "#b91c1c")
+                    return
+
+                new_numbers = "|".join(",".join(str(n) for n in s) for s in main_sets_list)
+                new_extra = "|".join(",".join(str(n) for n in s) for s in star_sets_list) if star_sets_list else None
+                self.database.update_ticket_numbers(record_id, new_numbers, new_extra)
+
+                self.refresh_archive()
+                dialog.open = False
+                self.page.update()  # type: ignore
+                self.show_snackbar("Wpisane liczby poprawione!", "#15803d")
+
+            except ValueError:
+                self.show_snackbar("Wprowadź poprawne liczby całkowite oddzielone spacjami!", "#b91c1c")
+            except Exception as ex:
+                self.show_snackbar(f"Błąd: {ex}", "#b91c1c")
+
+        def cancel_dialog(ev: Any) -> None:  # type: ignore
+            dialog.open = False
+            self.page.update()  # type: ignore
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Edytuj wpisane liczby - {game_type} #{record_id}"),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        entries_column,
+                        ft.Container(height=6),
+                        ft.TextButton(
+                            "➕ Dodaj kolejny zestaw (maks. 10)",
+                            on_click=on_add_entry,
+                        ),
+                    ],
+                    tight=True,
+                    spacing=0,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+                width=520,
+                height=420,
+            ),
+            actions=[
+                ft.TextButton("Anuluj", on_click=cancel_dialog),
+                ft.Button("✓ Zapisz poprawki", on_click=save_edit, bgcolor="#15803d", color="white"),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
