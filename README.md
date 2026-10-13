@@ -2,7 +2,7 @@
 
 **Generator szczęśliwych liczb do gier losowych** — nowoczesna aplikacja desktopowa z archiwum wyników.
 
-![Version](https://img.shields.io/badge/wersja-1.7-6366f1)
+![Version](https://img.shields.io/badge/wersja-1.8-6366f1)
 ![Python](https://img.shields.io/badge/Python-3.14-15803d)
 ![License](https://img.shields.io/badge/licencja-CC%20BY%204.0-blue)
 
@@ -26,6 +26,8 @@
 - **Edycja wpisanych liczb kuponu** — w archiwum można poprawić błędnie wpisane liczby zestawu (lub wszystkich zestawów) kuponu bez konieczności jego usuwania
 - **Same wyniki losowań** — przycisk „🎯 Wyniki losowań” w archiwum pozwala zapisać datę losowania i wylosowane liczby (bez kuponu); wyniki trafiają do osobnej tabeli `draw_results` i są wliczane do statystyk liczb, par i trójek (identyczne wyniki z kuponów i z tej listy liczone są raz)
 - **Odstęp między trafieniami** — przy najczęstszych liczbach, parach i trójkach obok procentu wyświetlane jest, co ile losowań średnio dana liczba/układ się trafia, np. `12× (24%, co 4.2 los.)`
+- **Generator ze statystyk** — przycisk „📊 Ze statystyk” obok „🎲 Generuj liczby” (Lotto i Eurojackpot) losuje zestaw na podstawie faktycznych wyników losowań z bazy (z kuponów z wynikiem oraz z listy „Wyniki losowań”; wymaga min. 10 losowań danej gry). Liczby są losowane z wagami (częstotliwość względem oczekiwanej + zaległość od ostatniego wystąpienia), a zestaw musi pasować do typowej struktury historycznych losowań: rozkład parzyste/nieparzyste i niskie/wysokie, zakres sumy (10.–90. percentyl), liczba kolejnych liczb; spośród poprawnych kandydatów preferowane są zestawy z częstymi parami. Wynik można dodać do kuponu i zarchiwizować jak każdy inny (kupon nie miesza zestawów z różnych generatorów). Uwaga: losowania są niezależne – statystyka nie zwiększa szans na wygraną
+- **Kolory wierszy archiwum wg pochodzenia kuponu** — tło wiersza (i pasek akcentu z lewej) odróżnia kupony z generatora losowego (indygo), własne liczby (bursztyn) i generator ze statystyk (zieleń); osobne odcienie dla trybu jasnego i ciemnego, legenda nad listą. Pochodzenie zapisywane jest w kolumnie `source` (starsze rekordy mają wartość `generator`)
 
 ---
 
@@ -79,6 +81,7 @@ python lottomat_flet.py
 ```
 lottomat_flet.py      → główna klasa LottomatApp (UI + logika)
 archive_tab_flet.py   → widok archiwum (ArchiveTabFlet)
+statistical_generator.py → generator liczb ze statystyk (StatisticalGenerator)
 database.py           → warstwa danych SQLite (LottomatDatabase)
 Uruchom_Lottomat.bat  → launcher Windows
 ```
@@ -95,6 +98,7 @@ Uruchom_Lottomat.bat  → launcher Windows
 
 | Wersja | Zmiany |
 |--------|--------|
+| 1.8 | Generator liczb ze statystyk (przycisk „📊 Ze statystyk” dla Lotto i Eurojackpot, archiwizacja jako kupon); kolumna `source` w archiwum i kolorowanie tła wierszy wg pochodzenia kuponu (generator / własne liczby / statystyki) w trybie jasnym i ciemnym, legenda kolorów |
 | 1.7 | Dodawanie samych wyników losowań (data + liczby, osobna tabela `draw_results`) wliczanych do statystyk liczb, par i trójek; przy najczęstszych liczbach, parach i trójkach obok procentu wyświetlany jest średni odstęp w losowaniach (np. `12× (24%, co 4.2 los.)`); identyczne wyniki z kuponów i z listy wyników liczone jako jedno losowanie; poprawki typowania w `archive_tab_flet.py` |
 | 1.5 | Najczęstsze pary gwiazd Eurojackpot wyświetlane obok par głównych; sekcja częstotliwości najczęstszych liczb (co ile losowań); poprawka czytelności statystyk w trybie ciemnym |
 | 1.4 | Statystyki najczęstszych par i trójek liczb w wynikach losowania (top 5, osobno dla Lotto i Eurojackpot); poprawka kopiowania do schowka i archiwizacji własnych liczb dla Flet 0.84+ |

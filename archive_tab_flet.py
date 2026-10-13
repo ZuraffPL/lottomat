@@ -1,7 +1,8 @@
 import flet as ft  # type: ignore
 import itertools
-from database import LottomatDatabase, Record
+from database import LottomatDatabase, Record, SOURCE_GENERATOR, SOURCE_CUSTOM, SOURCE_STATISTICAL
 from datetime import datetime
+from statistical_generator import StatisticalGenerator
 from typing import Any
 
 
@@ -9,11 +10,12 @@ type EntryFields = dict[str, Any]
 
 
 class ArchiveTabFlet:
-    # Kolory tła rekordów
-    LOTTO_BG_LIGHT = "#EEF2FF"
-    EURO_BG_LIGHT = "#F0FDF4"
-    LOTTO_BG_DARK = "#1a2332"
-    EURO_BG_DARK = "#1a2b23"
+    # Kolory tła rekordów wg pochodzenia kuponu: (jasny, ciemny, akcent, opis)
+    SOURCE_STYLES: dict[str, tuple[str, str, str, str]] = {
+        SOURCE_GENERATOR: ("#E0E7FF", "#1b2547", "#6366f1", "Generator losowy"),
+        SOURCE_CUSTOM: ("#FEF3C7", "#33290f", "#d97706", "Własne liczby"),
+        SOURCE_STATISTICAL: ("#D1FAE5", "#10332a", "#0d9488", "Generator ze statystyk"),
+    }
     MATCH_HIGHLIGHT_COLOR = "#F59E0B"
 
     def __init__(self, page: ft.Page, database: LottomatDatabase):
@@ -84,25 +86,7 @@ class ArchiveTabFlet:
         """Zbiera losowania (liczby, gwiazdy) z kuponów z wynikiem oraz z samych wyników losowań.
         Identyczne wyniki (np. kilka kuponów na to samo losowanie) są liczone jako jedno losowanie.
         """
-        draws: dict[str, list[tuple[str, str | None]]] = {"Lotto": [], "Eurojackpot": []}
-        seen: set[tuple[str, str, str]] = set()
-
-        def add(game: str, numbers: str, extra: str | None) -> None:
-            if game not in draws or not numbers:
-                return
-            main = ",".join(sorted((n.strip() for n in numbers.split(",") if n.strip()), key=int))
-            stars = ",".join(sorted((n.strip() for n in extra.split(",") if n.strip()), key=int)) if extra else ""
-            key = (game, main, stars)
-            if key in seen:
-                return
-            seen.add(key)
-            draws[game].append((main, stars or None))
-
-        for rec in all_records:
-            add(rec[1], rec[4] or "", rec[5])
-        for _, game, _, numbers, extra in self.database.get_draw_results():
-            add(game, numbers, extra)
-        return draws
+        return StatisticalGenerator.collect_draws(self.database, all_records)
 
     def _refresh_stats(self) -> None:
         """Aktualizacja panelu statystyk na podstawie wszystkich danych z bazy"""
@@ -135,7 +119,7 @@ class ArchiveTabFlet:
             wins = 0
 
             for rec in with_result:
-                _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _, _, _, _ = rec
+                _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, *_ = rec
                 act_nums: set[str] = set(actual_numbers.split(",")) if actual_numbers else set()
                 main_sets = numbers.split("|") if numbers else []
                 extra_sets = extra_numbers.split("|") if extra_numbers else []
@@ -216,7 +200,7 @@ class ArchiveTabFlet:
         lotto_res = [r for r in all_records if r[1] == "Lotto" and r[4]]
         lotto_sets_total = 0
         for rec in lotto_res:
-            _, _, numbers, _, actual_numbers, _, _, _, _, _ = rec
+            _, _, numbers, _, actual_numbers, *_ = rec
             act_nums: set[str] = set(actual_numbers.split(",")) if actual_numbers else set()
             for s in (numbers.split("|") if numbers else []):
                 gen_nums: set[str] = set(s.split(",")) if s else set()
@@ -260,7 +244,7 @@ class ArchiveTabFlet:
         euro_res = [r for r in all_records if r[1] == "Eurojackpot" and r[4]]
         euro_sets_total = 0
         for rec in euro_res:
-            _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _, _, _, _ = rec
+            _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, *_ = rec
             act_nums: set[str] = set(actual_numbers.split(",")) if actual_numbers else set()
             act_extra: set[str] = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
             main_sets = numbers.split("|") if numbers else []
@@ -836,7 +820,7 @@ class ArchiveTabFlet:
 
         # Wypełnienie listy
         for record in records:
-            record_id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date, prize_amount, prize_currency, _ticket_price = record
+            record_id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date, prize_amount, prize_currency, _ticket_price, source = record
 
             # Parsowanie zestawów (separator '|'; stare rekordy bez '|' = jeden zestaw)
             main_sets: list[str] = numbers.split("|") if numbers else []
@@ -881,11 +865,11 @@ class ArchiveTabFlet:
             except ValueError:
                 date_display = created_date
 
-            # Kolor tła i kolor nazwy gry
-            if self.page.theme_mode == ft.ThemeMode.DARK:
-                bg_color = self.LOTTO_BG_DARK if game_type == "Lotto" else self.EURO_BG_DARK
-            else:
-                bg_color = self.LOTTO_BG_LIGHT if game_type == "Lotto" else self.EURO_BG_LIGHT
+            # Kolor tła (wg pochodzenia kuponu, osobno dla trybu jasnego/ciemnego) i kolor nazwy gry
+            bg_light, bg_dark, accent_color, _label = self.SOURCE_STYLES.get(
+                source, self.SOURCE_STYLES[SOURCE_GENERATOR]
+            )
+            bg_color = bg_dark if self.page.theme_mode == ft.ThemeMode.DARK else bg_light
             game_color = "#ef4444" if game_type == "Lotto" else "#3b82f6"
 
             # Wiersz jako Container – wysokość dopasowuje się automatycznie do zawartości
@@ -949,6 +933,7 @@ class ArchiveTabFlet:
                     vertical_alignment=ft.CrossAxisAlignment.START,
                 ),
                 bgcolor=bg_color,
+                border=ft.Border.only(left=ft.BorderSide(4, accent_color)),
                 border_radius=6,
                 padding=ft.Padding.symmetric(horizontal=10, vertical=8),
             )
@@ -1424,9 +1409,9 @@ class ArchiveTabFlet:
                     return
 
                 if game == "Lotto":
-                    self.database.add_lotto_record(main_sets_list)
+                    self.database.add_lotto_record(main_sets_list, source=SOURCE_CUSTOM)
                 else:
-                    self.database.add_eurojackpot_record(main_sets_list, star_sets_list)
+                    self.database.add_eurojackpot_record(main_sets_list, star_sets_list, source=SOURCE_CUSTOM)
 
                 self.refresh_archive()
                 dialog.open = False
@@ -1788,6 +1773,20 @@ class ArchiveTabFlet:
             )
         )
     
+    def _build_source_legend(self) -> list[ft.Control]:
+        """Legenda kolorów tła wierszy (kolor akcentu + opis pochodzenia kuponu)"""
+        return [
+            ft.Row(
+                [
+                    ft.Container(width=14, height=14, bgcolor=accent, border_radius=3),
+                    ft.Text(value=label, size=12),
+                ],
+                spacing=6,
+                tight=True,
+            )
+            for _light, _dark, accent, label in self.SOURCE_STYLES.values()
+        ]
+
     def build(self) -> ft.Container:
         """Budowanie interfejsu zakładki archiwum"""
         # Początkowe załadowanie danych
@@ -1874,8 +1873,12 @@ class ArchiveTabFlet:
                                     on_select=self.filter_changed,
                                     width=200,
                                 ),
+                                ft.Container(expand=True),
+                                ft.Text(value="Legenda tła:", size=12, weight=ft.FontWeight.BOLD),
+                                *self._build_source_legend(),
                             ],
                             spacing=15,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
                         padding=15,
                         border_radius=10,

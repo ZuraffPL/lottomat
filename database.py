@@ -2,7 +2,12 @@
 import sqlite3
 from datetime import datetime
 
-type Record = tuple[int, str, str, str | None, str | None, str | None, str, float | None, str | None, float | None]
+type Record = tuple[int, str, str, str | None, str | None, str | None, str, float | None, str | None, float | None, str]
+
+# Pochodzenie kuponu w archiwum
+SOURCE_GENERATOR = "generator"  # bazowy generator losowy
+SOURCE_CUSTOM = "custom"  # własne liczby wpisane ręcznie
+SOURCE_STATISTICAL = "statistical"  # generator oparty na statystykach z wyników losowań
 
 
 type DrawResult = tuple[int, str, str, str, str | None]  # (id, game_type, draw_date, numbers, extra_numbers)
@@ -73,6 +78,9 @@ class LottomatDatabase:
             cursor.execute("UPDATE archive SET ticket_price = 4.0 WHERE game_type = 'Lotto' AND ticket_price IS NULL")
             cursor.execute("UPDATE archive SET ticket_price = 12.5 WHERE game_type = 'Eurojackpot' AND ticket_price IS NULL")
 
+        if 'source' not in columns:
+            cursor.execute("ALTER TABLE archive ADD COLUMN source TEXT DEFAULT 'generator'")
+
     def _ensure_default_settings(self, cursor: sqlite3.Cursor) -> None:
         """Ustawia domyślne wartości w tabeli settings jeśli nie istnieją"""
         defaults = [("lotto_price", "4.0"), ("eurojackpot_price", "12.5")]
@@ -112,9 +120,10 @@ class LottomatDatabase:
             i += 1
         return i
     
-    def add_lotto_record(self, sets: list[list[int]], ticket_price: float | None = None) -> int:
+    def add_lotto_record(self, sets: list[list[int]], ticket_price: float | None = None, source: str = SOURCE_GENERATOR) -> int:
         """Dodanie rekordu Lotto do archiwum. `sets` to lista zestawów 6 liczb (maks. 10).
         Format zapisu: zestawy oddzielone '|', liczby wewnątrz zestawu oddzielone ','.
+        `source` – pochodzenie kuponu (SOURCE_GENERATOR / SOURCE_CUSTOM / SOURCE_STATISTICAL).
         """
         if ticket_price is None:
             ticket_price = self.get_lotto_price()
@@ -123,15 +132,22 @@ class LottomatDatabase:
             numbers_str = "|".join(",".join(str(n) for n in s) for s in sets)
             record_id = self._get_next_id(cursor)
             cursor.execute("""
-                INSERT INTO archive (id, game_type, numbers, created_date, ticket_price)
-                VALUES (?, ?, ?, ?, ?)
-            """, (record_id, "Lotto", numbers_str, datetime.now().isoformat(timespec='seconds'), ticket_price))
+                INSERT INTO archive (id, game_type, numbers, created_date, ticket_price, source)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (record_id, "Lotto", numbers_str, datetime.now().isoformat(timespec='seconds'), ticket_price, source))
             return record_id
 
-    def add_eurojackpot_record(self, main_sets: list[list[int]], star_sets: list[list[int]], ticket_price: float | None = None) -> int:
+    def add_eurojackpot_record(
+        self,
+        main_sets: list[list[int]],
+        star_sets: list[list[int]],
+        ticket_price: float | None = None,
+        source: str = SOURCE_GENERATOR,
+    ) -> int:
         """Dodanie rekordu Eurojackpot do archiwum.
         `main_sets` – lista zestawów liczb głównych; `star_sets` – lista zestawów gwiazd.
         Zestawy main_sets[i] i star_sets[i] tworzą parę. Maks. 10 zestawów.
+        `source` – pochodzenie kuponu (SOURCE_GENERATOR / SOURCE_CUSTOM / SOURCE_STATISTICAL).
         """
         if ticket_price is None:
             ticket_price = self.get_eurojackpot_price()
@@ -141,17 +157,18 @@ class LottomatDatabase:
             stars_str = "|".join(",".join(str(n) for n in s) for s in star_sets)
             record_id = self._get_next_id(cursor)
             cursor.execute("""
-                INSERT INTO archive (id, game_type, numbers, extra_numbers, created_date, ticket_price)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (record_id, "Eurojackpot", main_str, stars_str, datetime.now().isoformat(timespec='seconds'), ticket_price))
+                INSERT INTO archive (id, game_type, numbers, extra_numbers, created_date, ticket_price, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (record_id, "Eurojackpot", main_str, stars_str, datetime.now().isoformat(timespec='seconds'), ticket_price, source))
             return record_id
+
     def get_all_records(self) -> list[Record]:
         """Pobranie wszystkich rekordów z archiwum"""
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date,
-                       prize_amount, prize_currency, ticket_price
+                       prize_amount, prize_currency, ticket_price, COALESCE(source, 'generator')
                 FROM archive
                 ORDER BY created_date DESC
             """)
@@ -163,7 +180,7 @@ class LottomatDatabase:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date,
-                       prize_amount, prize_currency, ticket_price
+                       prize_amount, prize_currency, ticket_price, COALESCE(source, 'generator')
                 FROM archive
                 WHERE game_type = ?
                 ORDER BY created_date DESC

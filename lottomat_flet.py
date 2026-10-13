@@ -2,11 +2,12 @@ import asyncio
 import subprocess
 import flet as ft  # type: ignore
 import random
-from database import LottomatDatabase
+from database import LottomatDatabase, SOURCE_GENERATOR, SOURCE_STATISTICAL
 from archive_tab_flet import ArchiveTabFlet
+from statistical_generator import StatisticalGenerator
 from typing import Any
 
-VERSION = "1.7"
+VERSION = "1.8"
 
 
 class LottomatApp:
@@ -36,11 +37,20 @@ class LottomatApp:
         self.lotto_color = "#ef4444"
         self.euro_color = "#3b82f6"
         self.star_color = "#fbbf24"
+        self.stat_color = "#0d9488"
         
         # Zmienne do przechowywania wylosowanych liczb
         self.lotto_numbers: list[int] = []
         self.euro_main_numbers: list[int] = []
         self.euro_star_numbers: list[int] = []
+
+        # Pochodzenie bieżących liczb i kuponu (bazowy generator / generator ze statystyk)
+        self.lotto_source = SOURCE_GENERATOR
+        self.euro_source = SOURCE_GENERATOR
+        self.lotto_pending_source: str | None = None
+        self.euro_pending_source: str | None = None
+        self.lotto_source_text = ft.Text("", size=12, color=self.stat_color, weight=ft.FontWeight.BOLD)
+        self.euro_source_text = ft.Text("", size=12, color=self.stat_color, weight=ft.FontWeight.BOLD)
 
         # Pending sets (bufor kuponu – wiele zestawów przed archiwizacją)
         self.lotto_pending_sets: list[list[int]] = []
@@ -55,6 +65,7 @@ class LottomatApp:
         
         # Baza danych
         self.database = LottomatDatabase()
+        self.stat_generator = StatisticalGenerator(self.database)
         
         # Widok archiwum (inicjalizowany przy tworzeniu zakładki)
         self.archive_view: ArchiveTabFlet | None = None
@@ -90,33 +101,63 @@ class LottomatApp:
             ),
         )
     
-    def generate_lotto(self, e: Any) -> None:  # type: ignore
-        """Generowanie liczb dla gry Lotto"""
-        self.lotto_numbers = sorted(random.sample(range(1, 50), 6))
-        
-        # Czyszczenie i dodanie nowych kulek
+    def _show_lotto_numbers(self, numbers: list[int], source: str) -> None:
+        """Wyświetla wygenerowane liczby Lotto wraz z oznaczeniem ich pochodzenia"""
+        self.lotto_numbers = numbers
+        self.lotto_source = source
+        self.lotto_source_text.value = "📊 Wygenerowano ze statystyk" if source == SOURCE_STATISTICAL else ""
         self.lotto_balls_container.controls.clear()
         for num in self.lotto_numbers:
             self.lotto_balls_container.controls.append(self.create_ball(num, self.lotto_color))
-        
         self.page.update()  # type: ignore
-    
-    def generate_eurojackpot(self, e: Any) -> None:  # type: ignore
-        """Generowanie liczb dla gry Eurojackpot"""
-        self.euro_main_numbers = sorted(random.sample(range(1, 51), 5))
-        self.euro_star_numbers = sorted(random.sample(range(1, 13), 2))
-        
-        # Czyszczenie i dodanie nowych kulek - liczby główne
+
+    def _show_euro_numbers(self, main_numbers: list[int], star_numbers: list[int], source: str) -> None:
+        """Wyświetla wygenerowane liczby Eurojackpot wraz z oznaczeniem ich pochodzenia"""
+        self.euro_main_numbers = main_numbers
+        self.euro_star_numbers = star_numbers
+        self.euro_source = source
+        self.euro_source_text.value = "📊 Wygenerowano ze statystyk" if source == SOURCE_STATISTICAL else ""
         self.euro_main_balls_container.controls.clear()
         for num in self.euro_main_numbers:
             self.euro_main_balls_container.controls.append(self.create_ball(num, self.euro_color))
-        
-        # Czyszczenie i dodanie gwiazd
         self.euro_star_balls_container.controls.clear()
         for num in self.euro_star_numbers:
             self.euro_star_balls_container.controls.append(self.create_ball(num, self.star_color))
-        
         self.page.update()  # type: ignore
+
+    def _not_enough_draws_message(self) -> None:
+        self.show_snackbar(
+            f"Za mało wyników losowań w bazie (min. {StatisticalGenerator.MIN_DRAWS}) – dodaj je w Archiwum → 🎯 Wyniki losowań.",
+            "#b91c1c",
+        )
+
+    def generate_lotto(self, e: Any) -> None:  # type: ignore
+        """Generowanie liczb dla gry Lotto"""
+        self._show_lotto_numbers(sorted(random.sample(range(1, 50), 6)), SOURCE_GENERATOR)
+
+    def generate_lotto_statistical(self, e: Any) -> None:  # type: ignore
+        """Generowanie liczb Lotto na podstawie statystyk wyników losowań z bazy"""
+        numbers = self.stat_generator.generate_lotto()
+        if numbers is None:
+            self._not_enough_draws_message()
+            return
+        self._show_lotto_numbers(numbers, SOURCE_STATISTICAL)
+
+    def generate_eurojackpot(self, e: Any) -> None:  # type: ignore
+        """Generowanie liczb dla gry Eurojackpot"""
+        self._show_euro_numbers(
+            sorted(random.sample(range(1, 51), 5)),
+            sorted(random.sample(range(1, 13), 2)),
+            SOURCE_GENERATOR,
+        )
+
+    def generate_eurojackpot_statistical(self, e: Any) -> None:  # type: ignore
+        """Generowanie liczb Eurojackpot na podstawie statystyk wyników losowań z bazy"""
+        result = self.stat_generator.generate_eurojackpot()
+        if result is None:
+            self._not_enough_draws_message()
+            return
+        self._show_euro_numbers(result[0], result[1], SOURCE_STATISTICAL)
     
     def _copy_to_clipboard(self, text: str) -> None:
         """Kopiuje tekst do schowka systemowego (Windows)"""
@@ -186,7 +227,13 @@ class LottomatApp:
             )
             self.lotto_pending_container.controls.append(row)
         count = len(self.lotto_pending_sets)
-        self.lotto_pending_count_text.value = f"Zestawy w kuponie: {count}/10"
+        if count == 0:
+            self.lotto_pending_source = None
+        self.lotto_pending_count_text.value = f"Zestawy w kuponie: {count}/10{self._source_suffix(self.lotto_pending_source)}"
+
+    @staticmethod
+    def _source_suffix(source: str | None) -> str:
+        return " · 📊 ze statystyk" if source == SOURCE_STATISTICAL else ""
 
     def _add_to_lotto_pending(self, e: Any) -> None:  # type: ignore
         """Dodaje bieżący zestaw Lotto do kuponu"""
@@ -196,9 +243,14 @@ class LottomatApp:
         if len(self.lotto_pending_sets) >= 10:
             self.show_snackbar("Maksymalnie 10 zestawów w kuponie!", "#b91c1c")
             return
+        if self.lotto_pending_sets and self.lotto_pending_source != self.lotto_source:
+            self.show_snackbar("Kupon nie może mieszać zestawów z różnych generatorów – zarchiwizuj go lub wyczyść!", "#b91c1c")
+            return
         self.lotto_pending_sets.append(self.lotto_numbers[:])
+        self.lotto_pending_source = self.lotto_source
         self._refresh_lotto_pending_display()
         self.lotto_numbers = []
+        self.lotto_source_text.value = ""
         self.lotto_balls_container.controls.clear()
         self.page.update()  # type: ignore
 
@@ -257,7 +309,9 @@ class LottomatApp:
             )
             self.euro_pending_container.controls.append(row)
         count = len(self.euro_pending_sets)
-        self.euro_pending_count_text.value = f"Zestawy w kuponie: {count}/10"
+        if count == 0:
+            self.euro_pending_source = None
+        self.euro_pending_count_text.value = f"Zestawy w kuponie: {count}/10{self._source_suffix(self.euro_pending_source)}"
 
     def _add_to_euro_pending(self, e: Any) -> None:  # type: ignore
         """Dodaje bieżący zestaw Eurojackpot do kuponu"""
@@ -267,10 +321,15 @@ class LottomatApp:
         if len(self.euro_pending_sets) >= 10:
             self.show_snackbar("Maksymalnie 10 zestawów w kuponie!", "#b91c1c")
             return
+        if self.euro_pending_sets and self.euro_pending_source != self.euro_source:
+            self.show_snackbar("Kupon nie może mieszać zestawów z różnych generatorów – zarchiwizuj go lub wyczyść!", "#b91c1c")
+            return
         self.euro_pending_sets.append((self.euro_main_numbers[:], self.euro_star_numbers[:]))
+        self.euro_pending_source = self.euro_source
         self._refresh_euro_pending_display()
         self.euro_main_numbers = []
         self.euro_star_numbers = []
+        self.euro_source_text.value = ""
         self.euro_main_balls_container.controls.clear()
         self.euro_star_balls_container.controls.clear()
         self.page.update()  # type: ignore
@@ -285,16 +344,19 @@ class LottomatApp:
         """Archiwizuje kupon Lotto (wszystkie zestawy z kuponu lub bieżący)"""
         if self.lotto_pending_sets:
             sets_to_save = self.lotto_pending_sets[:]
+            source = self.lotto_pending_source or SOURCE_GENERATOR
         elif self.lotto_numbers:
             sets_to_save = [self.lotto_numbers[:]]
+            source = self.lotto_source
         else:
             self.show_snackbar("Najpierw wygeneruj lub dodaj liczby do kuponu!", "#b91c1c")
             return
 
-        self.database.add_lotto_record(sets_to_save)
+        self.database.add_lotto_record(sets_to_save, source=source)
         self.lotto_pending_sets.clear()
         self._refresh_lotto_pending_display()
         self.lotto_numbers = []
+        self.lotto_source_text.value = ""
         self.lotto_balls_container.controls.clear()
         n = len(sets_to_save)
         label = f"{n} zestawy" if n in (2, 3, 4) else (f"{n} zestawów" if n > 4 else "1 zestaw")
@@ -308,18 +370,21 @@ class LottomatApp:
         if self.euro_pending_sets:
             main_sets = [m for m, _ in self.euro_pending_sets]
             star_sets = [s for _, s in self.euro_pending_sets]
+            source = self.euro_pending_source or SOURCE_GENERATOR
         elif self.euro_main_numbers and self.euro_star_numbers:
             main_sets = [self.euro_main_numbers[:]]
             star_sets = [self.euro_star_numbers[:]]
+            source = self.euro_source
         else:
             self.show_snackbar("Najpierw wygeneruj lub dodaj liczby do kuponu!", "#b91c1c")
             return
 
-        self.database.add_eurojackpot_record(main_sets, star_sets)
+        self.database.add_eurojackpot_record(main_sets, star_sets, source=source)
         self.euro_pending_sets.clear()
         self._refresh_euro_pending_display()
         self.euro_main_numbers = []
         self.euro_star_numbers = []
+        self.euro_source_text.value = ""
         self.euro_main_balls_container.controls.clear()
         self.euro_star_balls_container.controls.clear()
         n = len(main_sets)
@@ -354,17 +419,35 @@ class LottomatApp:
                     ),
                     ft.Container(height=10),
                     
-                    # Przycisk generowania
-                    ft.Button(
-                        content="🎲 Generuj liczby",
-                        on_click=self.generate_lotto,
-                        style=ft.ButtonStyle(
-                            bgcolor=self.lotto_color,
-                            color="white",
-                            padding=ft.Padding.symmetric(horizontal=30, vertical=18),
-                            text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD),
-                        ),
-                        height=55,
+                    # Przyciski generowania (losowy / ze statystyk)
+                    ft.Row(
+                        [
+                            ft.Button(
+                                content="🎲 Generuj liczby",
+                                on_click=self.generate_lotto,
+                                style=ft.ButtonStyle(
+                                    bgcolor=self.lotto_color,
+                                    color="white",
+                                    padding=ft.Padding.symmetric(horizontal=30, vertical=18),
+                                    text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD),
+                                ),
+                                height=55,
+                            ),
+                            ft.Button(
+                                content="📊 Ze statystyk",
+                                tooltip="Generuje zestaw na podstawie statystyk wyników losowań zapisanych w bazie",
+                                on_click=self.generate_lotto_statistical,
+                                style=ft.ButtonStyle(
+                                    bgcolor=self.stat_color,
+                                    color="white",
+                                    padding=ft.Padding.symmetric(horizontal=30, vertical=18),
+                                    text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD),
+                                ),
+                                height=55,
+                            ),
+                        ],
+                        spacing=10,
+                        alignment=ft.MainAxisAlignment.CENTER,
                     ),
                     ft.Container(height=15),
                     
@@ -377,6 +460,7 @@ class LottomatApp:
                         height=120,
                         alignment=ft.alignment.Alignment.CENTER,
                     ),
+                    self.lotto_source_text,
                     ft.Container(height=15),
                     
                     # Przyciski akcji
@@ -470,17 +554,35 @@ class LottomatApp:
                     ),
                     ft.Container(height=10),
                     
-                    # Przycisk generowania
-                    ft.Button(
-                        content="🎲 Generuj liczby",
-                        on_click=self.generate_eurojackpot,
-                        style=ft.ButtonStyle(
-                            bgcolor=self.euro_color,
-                            color="white",
-                            padding=ft.Padding.symmetric(horizontal=30, vertical=18),
-                            text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD),
-                        ),
-                        height=55,
+                    # Przyciski generowania (losowy / ze statystyk)
+                    ft.Row(
+                        [
+                            ft.Button(
+                                content="🎲 Generuj liczby",
+                                on_click=self.generate_eurojackpot,
+                                style=ft.ButtonStyle(
+                                    bgcolor=self.euro_color,
+                                    color="white",
+                                    padding=ft.Padding.symmetric(horizontal=30, vertical=18),
+                                    text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD),
+                                ),
+                                height=55,
+                            ),
+                            ft.Button(
+                                content="📊 Ze statystyk",
+                                tooltip="Generuje zestaw na podstawie statystyk wyników losowań zapisanych w bazie",
+                                on_click=self.generate_eurojackpot_statistical,
+                                style=ft.ButtonStyle(
+                                    bgcolor=self.stat_color,
+                                    color="white",
+                                    padding=ft.Padding.symmetric(horizontal=30, vertical=18),
+                                    text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD),
+                                ),
+                                height=55,
+                            ),
+                        ],
+                        spacing=10,
+                        alignment=ft.MainAxisAlignment.CENTER,
                     ),
                     ft.Container(height=15),
                     
@@ -508,6 +610,7 @@ class LottomatApp:
                         height=120,
                         alignment=ft.alignment.Alignment.CENTER,
                     ),
+                    self.euro_source_text,
                     ft.Container(height=15),
                     
                     # Przyciski akcji
