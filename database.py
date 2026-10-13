@@ -5,6 +5,9 @@ from datetime import datetime
 type Record = tuple[int, str, str, str | None, str | None, str | None, str, float | None, str | None, float | None]
 
 
+type DrawResult = tuple[int, str, str, str, str | None]  # (id, game_type, draw_date, numbers, extra_numbers)
+
+
 class LottomatDatabase:
     def __init__(self, db_name: str = "lottomat_archive.db") -> None:
         """Inicjalizacja połączenia z bazą danych"""
@@ -30,6 +33,17 @@ class LottomatDatabase:
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
+                )
+            """)
+            # Same wyniki losowań (bez kuponu) – uwzględniane w statystykach
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS draw_results (
+                    id INTEGER PRIMARY KEY,
+                    game_type TEXT NOT NULL,
+                    draw_date TEXT NOT NULL,
+                    numbers TEXT NOT NULL,
+                    extra_numbers TEXT DEFAULT NULL,
+                    UNIQUE (game_type, draw_date)
                 )
             """)
             # Migracja: dodaj nowe kolumny jeśli nie istnieją
@@ -168,6 +182,56 @@ class LottomatDatabase:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM archive")
     
+    def _get_next_draw_result_id(self, cursor: sqlite3.Cursor) -> int:
+        """Zwraca najniższe wolne ID w tabeli draw_results (wypełnia luki)"""
+        cursor.execute("SELECT id FROM draw_results ORDER BY id")
+        existing: set[int] = {row[0] for row in cursor.fetchall()}
+        i = 1
+        while i in existing:
+            i += 1
+        return i
+
+    def add_draw_result(self, game_type: str, draw_date: str, numbers: str, extra_numbers: str | None = None) -> int | None:
+        """Dodanie samego wyniku losowania (data 'YYYY-MM-DD' + wylosowane liczby).
+        Zwraca ID nowego rekordu lub None, gdy wynik dla tej gry i daty już istnieje.
+        """
+        try:
+            with sqlite3.connect(self.db_name) as conn:
+                cursor = conn.cursor()
+                result_id = self._get_next_draw_result_id(cursor)
+                cursor.execute("""
+                    INSERT INTO draw_results (id, game_type, draw_date, numbers, extra_numbers)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (result_id, game_type, draw_date, numbers, extra_numbers))
+                return result_id
+        except sqlite3.IntegrityError:
+            return None
+
+    def get_draw_results(self, game_type: str | None = None) -> list[DrawResult]:
+        """Pobranie zapisanych wyników losowań (opcjonalnie dla jednej gry), od najnowszych"""
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            if game_type is None:
+                cursor.execute("""
+                    SELECT id, game_type, draw_date, numbers, extra_numbers
+                    FROM draw_results
+                    ORDER BY draw_date DESC, id DESC
+                """)
+            else:
+                cursor.execute("""
+                    SELECT id, game_type, draw_date, numbers, extra_numbers
+                    FROM draw_results
+                    WHERE game_type = ?
+                    ORDER BY draw_date DESC, id DESC
+                """, (game_type,))
+            return cursor.fetchall()
+
+    def delete_draw_result(self, result_id: int) -> None:
+        """Usunięcie zapisanego wyniku losowania"""
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM draw_results WHERE id = ?", (result_id,))
+
     def update_ticket_numbers(self, record_id: int, numbers: str, extra_numbers: str | None = None) -> None:
         """Aktualizacja wpisanych liczb kuponu (poprawka pomyłki przy wpisywaniu)"""
         with sqlite3.connect(self.db_name) as conn:

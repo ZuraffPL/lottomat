@@ -1,8 +1,11 @@
 import flet as ft  # type: ignore
 import itertools
-from database import LottomatDatabase
+from database import LottomatDatabase, Record
 from datetime import datetime
 from typing import Any
+
+
+type EntryFields = dict[str, Any]
 
 
 class ArchiveTabFlet:
@@ -22,16 +25,16 @@ class ArchiveTabFlet:
         self.records_header = ft.Container(
             content=ft.Row(
                 [
-                    ft.Container(ft.Text("ID",              size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=32),
-                    ft.Container(ft.Text("Gra",             size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=95),
-                    ft.Container(ft.Text("Twoje liczby",    size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=3),
-                    ft.Container(ft.Text("Dodatkowe",       size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
-                    ft.Container(ft.Text("Wynik losowania", size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
-                    ft.Container(ft.Text("Wynik extra",     size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=1),
-                    ft.Container(ft.Text("Trafność",        size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
-                    ft.Container(ft.Text("Wygrana",         size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=1),
-                    ft.Container(ft.Text("Data",            size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=125),
-                    ft.Container(ft.Text("Akcje",           size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=140),
+                    ft.Container(ft.Text(value="ID",              size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=32),
+                    ft.Container(ft.Text(value="Gra",             size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=95),
+                    ft.Container(ft.Text(value="Twoje liczby",    size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=3),
+                    ft.Container(ft.Text(value="Dodatkowe",       size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
+                    ft.Container(ft.Text(value="Wynik losowania", size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
+                    ft.Container(ft.Text(value="Wynik extra",     size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=1),
+                    ft.Container(ft.Text(value="Trafność",        size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=2),
+                    ft.Container(ft.Text(value="Wygrana",         size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), expand=1),
+                    ft.Container(ft.Text(value="Data",            size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=125),
+                    ft.Container(ft.Text(value="Akcje",           size=11, weight=ft.FontWeight.BOLD, color="#6b7280"), width=140),
                 ],
                 spacing=8,
             ),
@@ -43,7 +46,7 @@ class ArchiveTabFlet:
         # Lista rekordów (scrolluje niezależnie od nagłówka)
         self.records_list = ft.ListView(spacing=1, expand=True)
 
-        self.stats_text = ft.Text("Rekordów w archiwum: 0", size=13)
+        self.stats_text = ft.Text(value="Rekordów w archiwum: 0", size=13)
         self.stats_column = ft.Column([], spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
     
     def _lotto_prize_tier(self, matched: int) -> tuple[str, str]:
@@ -70,14 +73,46 @@ class ArchiveTabFlet:
         }
         return tiers.get((matched_main, matched_extra), ("", ""))
 
+    @staticmethod
+    def _freq_label(count: int, total_draws: int) -> str:
+        """Tekst '12× (24%, co 4.2 los.)' – liczność, odsetek i średni odstęp w losowaniach"""
+        pct = count / total_draws * 100 if total_draws > 0 else 0.0
+        interval = total_draws / count if count > 0 else 0.0
+        return f"{count}× ({pct:.0f}%, co {interval:.1f} los.)"
+
+    def _collect_draws(self, all_records: list[Record]) -> dict[str, list[tuple[str, str | None]]]:
+        """Zbiera losowania (liczby, gwiazdy) z kuponów z wynikiem oraz z samych wyników losowań.
+        Identyczne wyniki (np. kilka kuponów na to samo losowanie) są liczone jako jedno losowanie.
+        """
+        draws: dict[str, list[tuple[str, str | None]]] = {"Lotto": [], "Eurojackpot": []}
+        seen: set[tuple[str, str, str]] = set()
+
+        def add(game: str, numbers: str, extra: str | None) -> None:
+            if game not in draws or not numbers:
+                return
+            main = ",".join(sorted((n.strip() for n in numbers.split(",") if n.strip()), key=int))
+            stars = ",".join(sorted((n.strip() for n in extra.split(",") if n.strip()), key=int)) if extra else ""
+            key = (game, main, stars)
+            if key in seen:
+                return
+            seen.add(key)
+            draws[game].append((main, stars or None))
+
+        for rec in all_records:
+            add(rec[1], rec[4] or "", rec[5])
+        for _, game, _, numbers, extra in self.database.get_draw_results():
+            add(game, numbers, extra)
+        return draws
+
     def _refresh_stats(self) -> None:
         """Aktualizacja panelu statystyk na podstawie wszystkich danych z bazy"""
         self.stats_column.controls.clear()
         all_records = self.database.get_all_records()
+        draws_by_game = self._collect_draws(all_records)
 
         # --- Win Ratio (lewa kolumna) ---
         win_ratio_controls: list[ft.Control] = [
-            ft.Text("📊 Win Ratio", size=15, weight=ft.FontWeight.BOLD),
+            ft.Text(value="📊 Win Ratio", size=15, weight=ft.FontWeight.BOLD),
             ft.Container(height=6),
         ]
 
@@ -101,7 +136,7 @@ class ArchiveTabFlet:
 
             for rec in with_result:
                 _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _, _, _, _ = rec
-                act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
+                act_nums: set[str] = set(actual_numbers.split(",")) if actual_numbers else set()
                 main_sets = numbers.split("|") if numbers else []
                 extra_sets = extra_numbers.split("|") if extra_numbers else []
 
@@ -111,13 +146,13 @@ class ArchiveTabFlet:
                 best_tier_color = ""
 
                 for idx, s in enumerate(main_sets):
-                    gen_nums = set(s.split(","))
+                    gen_nums: set[str] = set(s.split(","))
                     if game_type == "Lotto":
                         tier_name, tier_color = self._lotto_prize_tier(len(gen_nums & act_nums))
                         rank = lotto_tier_rank.get(tier_name, 0)
                     else:
-                        act_extra = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
-                        gen_extra = set(extra_sets[idx].split(",")) if idx < len(extra_sets) else set()
+                        act_extra: set[str] = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
+                        gen_extra: set[str] = set(extra_sets[idx].split(",")) if idx < len(extra_sets) else set()
                         tier_name, tier_color = self._eurojackpot_prize_tier(
                             len(gen_nums & act_nums), len(gen_extra & act_extra)
                         )
@@ -136,10 +171,10 @@ class ArchiveTabFlet:
             win_pct = wins / n_res * 100 if n_res > 0 else 0.0
 
             section: list[ft.Control] = [
-                ft.Text(f"{icon} {game_type}", size=13, weight=ft.FontWeight.BOLD, color=color),
-                ft.Text(f"Kupony: {total}  |  Z wynikiem: {n_res}", size=11, color="#6b7280"),
+                ft.Text(value=f"{icon} {game_type}", size=13, weight=ft.FontWeight.BOLD, color=color),
+                ft.Text(value=f"Kupony: {total}  |  Z wynikiem: {n_res}", size=11, color="#6b7280"),
                 ft.Text(
-                    f"Wygrane: {wins}/{n_res}  ({win_pct:.1f}%)",
+                    value=f"Wygrane: {wins}/{n_res}  ({win_pct:.1f}%)",
                     size=12, weight=ft.FontWeight.W_500,
                     color="#15803d" if wins > 0 else "#6b7280",
                 ),
@@ -149,10 +184,10 @@ class ArchiveTabFlet:
                 section.append(
                     ft.Row([
                         ft.Container(
-                            content=ft.Text(tier_name, size=10, color=info["color"]),
+                            content=ft.Text(value=tier_name, size=10, color=info["color"]),
                             width=110,
                         ),
-                        ft.Text(f"{info['count']}× ({pct:.1f}%)", size=10, color="#9ca3af"),
+                        ft.Text(value=f"{info['count']}× ({pct:.1f}%)", size=10, color="#9ca3af"),
                     ], spacing=4)
                 )
 
@@ -172,7 +207,7 @@ class ArchiveTabFlet:
         win_ratio_controls.append(ft.Container(height=2, bgcolor="#e5e7eb"))
         win_ratio_controls.append(ft.Container(height=8))
         win_ratio_controls.append(
-            ft.Text("🎯 Trafność", size=15, weight=ft.FontWeight.BOLD)
+            ft.Text(value="🎯 Trafność", size=15, weight=ft.FontWeight.BOLD)
         )
         win_ratio_controls.append(ft.Container(height=6))
 
@@ -182,15 +217,15 @@ class ArchiveTabFlet:
         lotto_sets_total = 0
         for rec in lotto_res:
             _, _, numbers, _, actual_numbers, _, _, _, _, _ = rec
-            act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
+            act_nums: set[str] = set(actual_numbers.split(",")) if actual_numbers else set()
             for s in (numbers.split("|") if numbers else []):
-                gen_nums = set(s.split(",")) if s else set()
+                gen_nums: set[str] = set(s.split(",")) if s else set()
                 lotto_hits[len(gen_nums & act_nums)] += 1
                 lotto_sets_total += 1
 
         lotto_total = lotto_sets_total
         lotto_section: list[ft.Control] = [
-            ft.Text("🔴 Lotto", size=12, weight=ft.FontWeight.BOLD, color="#ef4444"),
+            ft.Text(value="🔴 Lotto", size=12, weight=ft.FontWeight.BOLD, color="#ef4444"),
         ]
         for k in range(6, -1, -1):
             cnt = lotto_hits[k]
@@ -200,11 +235,11 @@ class ArchiveTabFlet:
             lotto_section.append(
                 ft.Row([
                     ft.Container(
-                        content=ft.Text(f"{k}/6", size=10, color="#9ca3af"),
+                        content=ft.Text(value=f"{k}/6", size=10, color="#9ca3af"),
                         width=28,
                     ),
-                    ft.Text(f"{cnt}×", size=10, weight=ft.FontWeight.W_500, color=None),
-                    ft.Text(f"({pct:.0f}%)", size=10, color="#6b7280"),
+                    ft.Text(value=f"{cnt}×", size=10, weight=ft.FontWeight.W_500, color=None),
+                    ft.Text(value=f"({pct:.0f}%)", size=10, color="#6b7280"),
                 ], spacing=6)
             )
 
@@ -226,20 +261,20 @@ class ArchiveTabFlet:
         euro_sets_total = 0
         for rec in euro_res:
             _, _, numbers, extra_numbers, actual_numbers, actual_extra_numbers, _, _, _, _ = rec
-            act_nums = set(actual_numbers.split(",")) if actual_numbers else set()
-            act_extra = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
+            act_nums: set[str] = set(actual_numbers.split(",")) if actual_numbers else set()
+            act_extra: set[str] = set(actual_extra_numbers.split(",")) if actual_extra_numbers else set()
             main_sets = numbers.split("|") if numbers else []
             extra_sets = extra_numbers.split("|") if extra_numbers else []
             for idx, s in enumerate(main_sets):
-                gen_nums = set(s.split(","))
-                gen_extra = set(extra_sets[idx].split(",")) if idx < len(extra_sets) else set()
+                gen_nums: set[str] = set(s.split(","))
+                gen_extra: set[str] = set(extra_sets[idx].split(",")) if idx < len(extra_sets) else set()
                 key = (len(gen_nums & act_nums), len(gen_extra & act_extra))
                 euro_hits[key] = euro_hits.get(key, 0) + 1
                 euro_sets_total += 1
 
         euro_total = euro_sets_total
         euro_section: list[ft.Control] = [
-            ft.Text("🔵 Eurojackpot", size=12, weight=ft.FontWeight.BOLD, color="#3b82f6"),
+            ft.Text(value="🔵 Eurojackpot", size=12, weight=ft.FontWeight.BOLD, color="#3b82f6"),
         ]
         for key in sorted(euro_hits.keys(), reverse=True):
             cnt = euro_hits[key]
@@ -247,11 +282,11 @@ class ArchiveTabFlet:
             euro_section.append(
                 ft.Row([
                     ft.Container(
-                        content=ft.Text(f"{key[0]}/5+{key[1]}/2", size=10, color="#9ca3af"),
+                        content=ft.Text(value=f"{key[0]}/5+{key[1]}/2", size=10, color="#9ca3af"),
                         width=50,
                     ),
-                    ft.Text(f"{cnt}×", size=10, weight=ft.FontWeight.W_500, color=None),
-                    ft.Text(f"({pct:.0f}%)", size=10, color="#6b7280"),
+                    ft.Text(value=f"{cnt}×", size=10, weight=ft.FontWeight.W_500, color=None),
+                    ft.Text(value=f"({pct:.0f}%)", size=10, color="#6b7280"),
                 ], spacing=6)
             )
 
@@ -271,7 +306,7 @@ class ArchiveTabFlet:
         win_ratio_controls.append(ft.Container(height=2, bgcolor="#e5e7eb"))
         win_ratio_controls.append(ft.Container(height=8))
         win_ratio_controls.append(
-            ft.Text("💰 Finanse", size=15, weight=ft.FontWeight.BOLD)
+            ft.Text(value="💰 Finanse", size=15, weight=ft.FontWeight.BOLD)
         )
         win_ratio_controls.append(ft.Container(height=6))
 
@@ -297,20 +332,20 @@ class ArchiveTabFlet:
             balance_pln = won_pln - spent
 
             fin_section: list[ft.Control] = [
-                ft.Text(f"{icon} {game_type}", size=13, weight=ft.FontWeight.BOLD, color=color),
-                ft.Text(f"Kupony: {n_coupons}  |  Zakłady: {n_sets}", size=11, color="#6b7280"),
-                ft.Text(f"Wydano: {spent:,.2f} PLN", size=11, color="#9ca3af"),
+                ft.Text(value=f"{icon} {game_type}", size=13, weight=ft.FontWeight.BOLD, color=color),
+                ft.Text(value=f"Kupony: {n_coupons}  |  Zakłady: {n_sets}", size=11, color="#6b7280"),
+                ft.Text(value=f"Wydano: {spent:,.2f} PLN", size=11, color="#9ca3af"),
             ]
             if won_pln > 0 or won_eur > 0:
                 if won_pln > 0:
-                    fin_section.append(ft.Text(f"Wygrano: {won_pln:,.2f} PLN", size=11, color="#15803d"))
+                    fin_section.append(ft.Text(value=f"Wygrano: {won_pln:,.2f} PLN", size=11, color="#15803d"))
                 if won_eur > 0:
-                    fin_section.append(ft.Text(f"Wygrano: {won_eur:,.2f} EUR", size=11, color="#15803d"))
+                    fin_section.append(ft.Text(value=f"Wygrano: {won_eur:,.2f} EUR", size=11, color="#15803d"))
             else:
-                fin_section.append(ft.Text("Wygrano: 0,00 PLN", size=11, color="#6b7280"))
+                fin_section.append(ft.Text(value="Wygrano: 0,00 PLN", size=11, color="#6b7280"))
             fin_section.append(
                 ft.Text(
-                    f"Bilans PLN: {balance_pln:+,.2f}",
+                    value=f"Bilans PLN: {balance_pln:+,.2f}",
                     size=12, weight=ft.FontWeight.W_500,
                     color="#15803d" if balance_pln >= 0 else "#b91c1c",
                 )
@@ -337,18 +372,18 @@ class ArchiveTabFlet:
         total_balance = total_won_pln - total_spent
 
         summary: list[ft.Control] = [
-            ft.Text("📊 Łącznie", size=13, weight=ft.FontWeight.BOLD),
-            ft.Text(f"Wydano: {total_spent:,.2f} PLN", size=11, color="#9ca3af"),
+            ft.Text(value="📊 Łącznie", size=13, weight=ft.FontWeight.BOLD),
+            ft.Text(value=f"Wydano: {total_spent:,.2f} PLN", size=11, color="#9ca3af"),
         ]
         if total_won_pln > 0:
-            summary.append(ft.Text(f"Wygrano: {total_won_pln:,.2f} PLN", size=11, color="#15803d"))
+            summary.append(ft.Text(value=f"Wygrano: {total_won_pln:,.2f} PLN", size=11, color="#15803d"))
         if total_won_eur > 0:
-            summary.append(ft.Text(f"Wygrano: {total_won_eur:,.2f} EUR", size=11, color="#15803d"))
+            summary.append(ft.Text(value=f"Wygrano: {total_won_eur:,.2f} EUR", size=11, color="#15803d"))
         if total_won_pln == 0 and total_won_eur == 0:
-            summary.append(ft.Text("Wygrano: 0,00 PLN", size=11, color="#6b7280"))
+            summary.append(ft.Text(value="Wygrano: 0,00 PLN", size=11, color="#6b7280"))
         summary.append(
             ft.Text(
-                f"Bilans PLN: {total_balance:+,.2f}",
+                value=f"Bilans PLN: {total_balance:+,.2f}",
                 size=12, weight=ft.FontWeight.BOLD,
                 color="#15803d" if total_balance >= 0 else "#b91c1c",
             )
@@ -368,7 +403,7 @@ class ArchiveTabFlet:
         win_ratio_controls.append(ft.Container(height=2, bgcolor="#e5e7eb"))
         win_ratio_controls.append(ft.Container(height=8))
         win_ratio_controls.append(
-            ft.Text("📈 Częstotliwość najczęstszych liczb", size=15, weight=ft.FontWeight.BOLD)
+            ft.Text(value="📈 Częstotliwość najczęstszych liczb", size=15, weight=ft.FontWeight.BOLD)
         )
         win_ratio_controls.append(ft.Container(height=6))
 
@@ -376,24 +411,22 @@ class ArchiveTabFlet:
             ("Lotto", "#ef4444", "🔴"),
             ("Eurojackpot", "#3b82f6", "🔵"),
         ):
-            game_recs_freq = [r for r in all_records if r[1] == game_type and r[4]]
+            game_recs_freq = draws_by_game[game_type]
             n_draws_freq = len(game_recs_freq)
             if n_draws_freq == 0:
                 continue
 
             # Zlicz wystąpienia każdej liczby głównej w faktycznych wynikach
             num_counts: dict[str, int] = {}
-            for rec in game_recs_freq:
-                for num in rec[4].split(","):
-                    num = num.strip()
-                    if num:
-                        num_counts[num] = num_counts.get(num, 0) + 1
+            for main_str, _ in game_recs_freq:
+                for num in main_str.split(","):
+                    num_counts[num] = num_counts.get(num, 0) + 1
 
             top_nums = sorted(num_counts.items(), key=lambda kv: -kv[1])[:5]
 
             freq_interval_rows: list[ft.Control] = [
-                ft.Text(f"{icon} {game_type}", size=13, weight=ft.FontWeight.BOLD, color=color),
-                ft.Text(f"Na bazie {n_draws_freq} losowań", size=10, color="#6b7280"),
+                ft.Text(value=f"{icon} {game_type}", size=13, weight=ft.FontWeight.BOLD, color=color),
+                ft.Text(value=f"Na bazie {n_draws_freq} losowań", size=10, color="#6b7280"),
             ]
             for num_str, cnt in top_nums:
                 interval = n_draws_freq / cnt
@@ -401,11 +434,11 @@ class ArchiveTabFlet:
                     ft.Row(
                         [
                             ft.Container(
-                                content=ft.Text(num_str.rjust(2), size=10, color="#9ca3af"),
+                                content=ft.Text(value=num_str.rjust(2), size=10, color="#9ca3af"),
                                 width=22,
                             ),
-                            ft.Text(f"co {interval:.1f} los.", size=10, weight=ft.FontWeight.W_500, color=None),
-                            ft.Text(f"({cnt}×)", size=10, color="#6b7280"),
+                            ft.Text(value=f"co {interval:.1f} los.", size=10, weight=ft.FontWeight.W_500, color=None),
+                            ft.Text(value=f"({cnt}×)", size=10, color="#6b7280"),
                         ],
                         spacing=6,
                     )
@@ -414,18 +447,15 @@ class ArchiveTabFlet:
             # Dla Eurojackpot również gwiazdy
             if game_type == "Eurojackpot":
                 star_counts: dict[str, int] = {}
-                for rec in game_recs_freq:
-                    actual_extra = rec[5]
+                for _, actual_extra in game_recs_freq:
                     if actual_extra:
                         for num in actual_extra.split(","):
-                            num = num.strip()
-                            if num:
-                                star_counts[num] = star_counts.get(num, 0) + 1
+                            star_counts[num] = star_counts.get(num, 0) + 1
                 top_stars = sorted(star_counts.items(), key=lambda kv: -kv[1])[:3]
                 if top_stars:
                     freq_interval_rows.append(ft.Container(height=4))
                     freq_interval_rows.append(
-                        ft.Text("⭐ Gwiazdy", size=11, weight=ft.FontWeight.W_500, color="#fbbf24")
+                        ft.Text(value="⭐ Gwiazdy", size=11, weight=ft.FontWeight.W_500, color="#fbbf24")
                     )
                     for num_str, cnt in top_stars:
                         interval = n_draws_freq / cnt
@@ -433,11 +463,11 @@ class ArchiveTabFlet:
                             ft.Row(
                                 [
                                     ft.Container(
-                                        content=ft.Text(num_str.rjust(2), size=10, color="#9ca3af"),
+                                        content=ft.Text(value=num_str.rjust(2), size=10, color="#9ca3af"),
                                         width=22,
                                     ),
-                                    ft.Text(f"co {interval:.1f} los.", size=10, weight=ft.FontWeight.W_500, color=None),
-                                    ft.Text(f"({cnt}×)", size=10, color="#6b7280"),
+                                    ft.Text(value=f"co {interval:.1f} los.", size=10, weight=ft.FontWeight.W_500, color=None),
+                                    ft.Text(value=f"({cnt}×)", size=10, color="#6b7280"),
                                 ],
                                 spacing=6,
                             )
@@ -460,21 +490,14 @@ class ArchiveTabFlet:
             "Lotto":       {"main": {}},
             "Eurojackpot": {"main": {}, "extra": {}},
         }
-        draws: dict[str, int] = {"Lotto": 0, "Eurojackpot": 0}
+        draws: dict[str, int] = {game: len(items) for game, items in draws_by_game.items()}
 
-        for rec in all_records:
-            _, rec_game, _, _, actual_numbers, actual_extra_numbers, _, _, _, _ = rec
-            if not actual_numbers or rec_game not in freq:
-                continue
-            draws[rec_game] += 1
-            for num in actual_numbers.split(","):
-                num = num.strip()
-                if num:
+        for rec_game, game_draws in draws_by_game.items():
+            for main_str, extra_str in game_draws:
+                for num in main_str.split(","):
                     freq[rec_game]["main"][num] = freq[rec_game]["main"].get(num, 0) + 1
-            if rec_game == "Eurojackpot" and actual_extra_numbers:
-                for num in actual_extra_numbers.split(","):
-                    num = num.strip()
-                    if num:
+                if rec_game == "Eurojackpot" and extra_str:
+                    for num in extra_str.split(","):
                         freq["Eurojackpot"]["extra"][num] = freq["Eurojackpot"]["extra"].get(num, 0) + 1
 
         freq_sections: list[tuple[str, str, str, str]] = [
@@ -484,7 +507,7 @@ class ArchiveTabFlet:
         ]
 
         freq_controls: list[ft.Control] = [
-            ft.Text("🔢 Najczęstsze liczby", size=15, weight=ft.FontWeight.BOLD),
+            ft.Text(value="🔢 Najczęstsze liczby", size=15, weight=ft.FontWeight.BOLD),
             ft.Container(height=6),
         ]
 
@@ -497,23 +520,22 @@ class ArchiveTabFlet:
             max_c = sorted_nums[0][1]
 
             freq_rows: list[ft.Control] = [
-                ft.Text(label, size=12, weight=ft.FontWeight.BOLD, color=color),
+                ft.Text(value=label, size=12, weight=ft.FontWeight.BOLD, color=color),
             ]
             for num_str, count in sorted_nums:
-                pct = count / total_draws * 100 if total_draws > 0 else 0.0
                 bar_w = max(4, int(count / max_c * 150))
                 freq_rows.append(
                     ft.Row(
                         [
                             ft.Container(
-                                content=ft.Text(num_str.rjust(2), size=10, color=None),
+                                content=ft.Text(value=num_str.rjust(2), size=10, color=None),
                                 width=22,
                             ),
                             ft.Container(
                                 bgcolor=color, width=bar_w, height=8,
                                 border_radius=3, opacity=0.65,
                             ),
-                            ft.Text(f"{count}× ({pct:.0f}%)", size=10, color="#6b7280"),
+                            ft.Text(value=self._freq_label(count, total_draws), size=10, color="#6b7280"),
                         ],
                         spacing=4,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -536,17 +558,15 @@ class ArchiveTabFlet:
         freq_controls.append(ft.Container(height=2, bgcolor="#e5e7eb"))
         freq_controls.append(ft.Container(height=8))
         freq_controls.append(
-            ft.Text("👥 Najczęstsze pary", size=15, weight=ft.FontWeight.BOLD)
+            ft.Text(value="👥 Najczęstsze pary", size=15, weight=ft.FontWeight.BOLD)
         )
         freq_controls.append(ft.Container(height=6))
 
         for label, game, color in pair_triple_sections:
             pair_counts: dict[tuple[str, ...], int] = {}
-            game_draws_with_result = [r for r in all_records if r[1] == game and r[4]]
-            for rec in game_draws_with_result:
-                actual_numbers = rec[4]
-                nums = sorted(n.strip() for n in actual_numbers.split(",") if n.strip())
-                for pair in itertools.combinations(nums, 2):
+            game_draws_with_result = draws_by_game[game]
+            for main_str, _ in game_draws_with_result:
+                for pair in itertools.combinations(main_str.split(","), 2):
                     pair_counts[pair] = pair_counts.get(pair, 0) + 1
 
             top_pairs = sorted(pair_counts.items(), key=lambda kv: -kv[1])[:5]
@@ -556,30 +576,27 @@ class ArchiveTabFlet:
             star_pair_col: ft.Column | None = None
             if game == "Eurojackpot":
                 star_pair_counts: dict[tuple[str, ...], int] = {}
-                for rec in game_draws_with_result:
-                    actual_extra = rec[5]
+                for _, actual_extra in game_draws_with_result:
                     if actual_extra:
-                        star_nums = sorted(n.strip() for n in actual_extra.split(",") if n.strip())
-                        for pair in itertools.combinations(star_nums, 2):
+                        for pair in itertools.combinations(actual_extra.split(","), 2):
                             star_pair_counts[pair] = star_pair_counts.get(pair, 0) + 1
                 top_star_pairs = sorted(star_pair_counts.items(), key=lambda kv: -kv[1])[:5]
                 if top_star_pairs:
                     star_rows: list[ft.Control] = [
-                        ft.Text("⭐ Gwiazdy", size=12, weight=ft.FontWeight.BOLD, color="#fbbf24"),
+                        ft.Text(value="⭐ Gwiazdy", size=12, weight=ft.FontWeight.BOLD, color="#fbbf24"),
                     ]
                     for pair, count in top_star_pairs:
-                        pct = count / n_draws * 100 if n_draws > 0 else 0.0
                         star_rows.append(
                             ft.Row(
                                 [
                                     ft.Container(
                                         content=ft.Text(
-                                            f"{pair[0]} & {pair[1]}",
+                                            value=f"{pair[0]} & {pair[1]}",
                                             size=10, color=None,
                                         ),
                                         width=46,
                                     ),
-                                    ft.Text(f"{count}× ({pct:.0f}%)", size=10, color="#6b7280"),
+                                    ft.Text(value=self._freq_label(count, n_draws), size=10, color="#6b7280"),
                                 ],
                                 spacing=4,
                             )
@@ -588,21 +605,20 @@ class ArchiveTabFlet:
 
             if top_pairs:
                 pair_rows: list[ft.Control] = [
-                    ft.Text(label, size=12, weight=ft.FontWeight.BOLD, color=color),
+                    ft.Text(value=label, size=12, weight=ft.FontWeight.BOLD, color=color),
                 ]
                 for pair, count in top_pairs:
-                    pct = count / n_draws * 100 if n_draws > 0 else 0.0
                     pair_rows.append(
                         ft.Row(
                             [
                                 ft.Container(
                                     content=ft.Text(
-                                        f"{pair[0]} & {pair[1]}",
+                                        value=f"{pair[0]} & {pair[1]}",
                                         size=10, color=None,
                                     ),
                                     width=54,
                                 ),
-                                ft.Text(f"{count}× ({pct:.0f}%)", size=10, color="#6b7280"),
+                                ft.Text(value=self._freq_label(count, n_draws), size=10, color="#6b7280"),
                             ],
                             spacing=4,
                         )
@@ -633,17 +649,15 @@ class ArchiveTabFlet:
         freq_controls.append(ft.Container(height=2, bgcolor="#e5e7eb"))
         freq_controls.append(ft.Container(height=8))
         freq_controls.append(
-            ft.Text("🔺 Najczęstsze trójki", size=15, weight=ft.FontWeight.BOLD)
+            ft.Text(value="🔺 Najczęstsze trójki", size=15, weight=ft.FontWeight.BOLD)
         )
         freq_controls.append(ft.Container(height=6))
 
         for label, game, color in pair_triple_sections:
             triple_counts: dict[tuple[str, ...], int] = {}
-            game_draws_with_result = [r for r in all_records if r[1] == game and r[4]]
-            for rec in game_draws_with_result:
-                actual_numbers = rec[4]
-                nums = sorted(n.strip() for n in actual_numbers.split(",") if n.strip())
-                for triple in itertools.combinations(nums, 3):
+            game_draws_with_result = draws_by_game[game]
+            for main_str, _ in game_draws_with_result:
+                for triple in itertools.combinations(main_str.split(","), 3):
                     triple_counts[triple] = triple_counts.get(triple, 0) + 1
 
             top_triples = sorted(triple_counts.items(), key=lambda kv: -kv[1])[:5]
@@ -651,21 +665,20 @@ class ArchiveTabFlet:
 
             if top_triples:
                 triple_rows: list[ft.Control] = [
-                    ft.Text(label, size=12, weight=ft.FontWeight.BOLD, color=color),
+                    ft.Text(value=label, size=12, weight=ft.FontWeight.BOLD, color=color),
                 ]
                 for triple, count in top_triples:
-                    pct = count / n_draws * 100 if n_draws > 0 else 0.0
                     triple_rows.append(
                         ft.Row(
                             [
                                 ft.Container(
                                     content=ft.Text(
-                                        f"{triple[0]} & {triple[1]} & {triple[2]}",
+                                        value=f"{triple[0]} & {triple[1]} & {triple[2]}",
                                         size=10, color=None,
                                     ),
                                     width=80,
                                 ),
-                                ft.Text(f"{count}× ({pct:.0f}%)", size=10, color="#6b7280"),
+                                ft.Text(value=self._freq_label(count, n_draws), size=10, color="#6b7280"),
                             ],
                             spacing=4,
                         )
@@ -695,7 +708,7 @@ class ArchiveTabFlet:
     def format_numbers_with_highlights(self, numbers_str: str, matches: set[str]) -> ft.Row:  # type: ignore
         """Formatuje liczby z wizualnym oznaczeniem trafień w złotych kółeczkach"""
         if not numbers_str:
-            return ft.Row([ft.Text("-", size=12)])
+            return ft.Row([ft.Text(value="-", size=12)])
         
         nums = numbers_str.split(",")
         controls: list[ft.Control] = []
@@ -705,7 +718,7 @@ class ArchiveTabFlet:
                 # Trafiona liczba w złotym kółku
                 controls.append(  # type: ignore
                     ft.Container(
-                        content=ft.Text(num, size=10, weight=ft.FontWeight.BOLD, color="white"),
+                        content=ft.Text(value=num, size=10, weight=ft.FontWeight.BOLD, color="white"),
                         bgcolor=self.MATCH_HIGHLIGHT_COLOR,
                         width=24,
                         height=24,
@@ -715,11 +728,11 @@ class ArchiveTabFlet:
                 )
             else:
                 # Zwykła liczba
-                controls.append(ft.Text(num, size=12))  # type: ignore
+                controls.append(ft.Text(value=num, size=12))  # type: ignore
             
             # Dodaj przecinek i spację między liczbami (ale nie po ostatniej)
             if i < len(nums) - 1:
-                controls.append(ft.Text(", ", size=12))  # type: ignore
+                controls.append(ft.Text(value=", ", size=12))  # type: ignore
         
         return ft.Row(controls, spacing=2, wrap=False)
     
@@ -730,7 +743,7 @@ class ArchiveTabFlet:
     ) -> ft.Control:
         """Buduje widget wyświetlający jeden lub wiele zestawów liczb z podświetlonymi trafieniami."""
         if not sets:
-            return ft.Row([ft.Text("-", size=12)])
+            return ft.Row([ft.Text(value="-", size=12)])
         if len(sets) == 1:
             matches = set(sets[0].split(",")) & act_nums
             return self.format_numbers_with_highlights(sets[0], matches)
@@ -740,7 +753,7 @@ class ArchiveTabFlet:
             rows.append(
                 ft.Row(
                     [
-                        ft.Text(f"{idx + 1}.", size=10, color="#9ca3af", width=16),
+                        ft.Text(value=f"{idx + 1}.", size=10, color="#9ca3af", width=16),
                         self.format_numbers_with_highlights(s, matches),
                     ],
                     spacing=2,
@@ -759,7 +772,7 @@ class ArchiveTabFlet:
     ) -> ft.Control:
         """Buduje widget trafności dla jednego lub wielu zestawów."""
         if not main_sets:
-            return ft.Text("-", size=12, color="#6b7280")
+            return ft.Text(value="-", size=12, color="#6b7280")
 
         def lotto_acc(s: str) -> tuple[str, str]:
             hits = len(set(s.split(",")) & act_nums)
@@ -774,7 +787,7 @@ class ArchiveTabFlet:
 
         if len(main_sets) == 1:
             text, color = lotto_acc(main_sets[0]) if game_type == "Lotto" else euro_acc(0)
-            return ft.Text(text, size=12, weight=ft.FontWeight.BOLD, color=color)
+            return ft.Text(value=text, size=12, weight=ft.FontWeight.BOLD, color=color)
 
         rows: list[ft.Control] = []
         for idx in range(len(main_sets)):
@@ -782,8 +795,8 @@ class ArchiveTabFlet:
             rows.append(
                 ft.Row(
                     [
-                        ft.Text(f"{idx + 1}.", size=10, color="#9ca3af", width=16),
-                        ft.Text(text, size=11, weight=ft.FontWeight.BOLD, color=color),
+                        ft.Text(value=f"{idx + 1}.", size=10, color="#9ca3af", width=16),
+                        ft.Text(value=text, size=11, weight=ft.FontWeight.BOLD, color=color),
                     ],
                     spacing=2,
                 )
@@ -810,9 +823,8 @@ class ArchiveTabFlet:
                 return True
         return False
 
-    def refresh_archive(self):
+    def refresh_archive(self) -> None:
         """Odświeżenie listy rekordów"""
-        from database import Record  # type: ignore
         records: list[Record]
         if self.filter_value == "Wszystkie":
             records = self.database.get_all_records()
@@ -824,7 +836,7 @@ class ArchiveTabFlet:
 
         # Wypełnienie listy
         for record in records:
-            record_id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date, prize_amount, prize_currency, ticket_price = record
+            record_id, game_type, numbers, extra_numbers, actual_numbers, actual_extra_numbers, created_date, prize_amount, prize_currency, _ticket_price = record
 
             # Parsowanie zestawów (separator '|'; stare rekordy bez '|' = jeden zestaw)
             main_sets: list[str] = numbers.split("|") if numbers else []
@@ -834,7 +846,7 @@ class ArchiveTabFlet:
 
             # Wyświetlanie zestawów z podświetleniem trafień
             numbers_display = self._build_sets_display(main_sets, act_nums)
-            extra_display = self._build_sets_display(extra_sets, act_extra) if extra_sets else ft.Row([ft.Text("-", size=12)])
+            extra_display = self._build_sets_display(extra_sets, act_extra) if extra_sets else ft.Row([ft.Text(value="-", size=12)])
 
             # Wynik losowania
             result_display = actual_numbers.replace(",", ", ") if actual_numbers else "-"
@@ -846,7 +858,7 @@ class ArchiveTabFlet:
                     game_type, main_sets, extra_sets, act_nums, act_extra
                 )
             else:
-                accuracy_display: ft.Control = ft.Text("-", size=12, color="#6b7280")
+                accuracy_display: ft.Control = ft.Text(value="-", size=12, color="#6b7280")
 
             # Wyświetlanie wygranej
             has_prize_tier = bool(actual_numbers) and self._record_has_prize_tier(
@@ -854,13 +866,13 @@ class ArchiveTabFlet:
             )
             if prize_amount is not None and prize_currency is not None:
                 prize_display: ft.Control = ft.Text(
-                    f"{prize_amount:,.2f} {prize_currency}",
+                    value=f"{prize_amount:,.2f} {prize_currency}",
                     size=11, weight=ft.FontWeight.BOLD, color="#15803d",
                 )
             elif has_prize_tier:
-                prize_display = ft.Text("— dodaj →", size=10, color="#b45309", italic=True)
+                prize_display = ft.Text(value="— dodaj →", size=10, color="#b45309", italic=True)
             else:
-                prize_display = ft.Text("-", size=12, color="#9ca3af")
+                prize_display = ft.Text(value="-", size=12, color="#9ca3af")
 
             # Formatowanie daty
             try:
@@ -881,20 +893,20 @@ class ArchiveTabFlet:
                 content=ft.Row(
                     [
                         ft.Container(
-                            ft.Text(str(record_id), size=12, color="#9ca3af"),
+                            ft.Text(value=str(record_id), size=12, color="#9ca3af"),
                             width=32,
                         ),
                         ft.Container(
-                            ft.Text(game_type, size=12, weight=ft.FontWeight.BOLD, color=game_color),
+                            ft.Text(value=game_type, size=12, weight=ft.FontWeight.BOLD, color=game_color),
                             width=95,
                         ),
                         ft.Container(numbers_display, expand=3),
                         ft.Container(extra_display, expand=2),
-                        ft.Container(ft.Text(result_display, size=12), expand=2),
-                        ft.Container(ft.Text(result_extra_display, size=12), expand=1),
+                        ft.Container(ft.Text(value=result_display, size=12), expand=2),
+                        ft.Container(ft.Text(value=result_extra_display, size=12), expand=1),
                         ft.Container(accuracy_display, expand=2),
                         ft.Container(prize_display, expand=1),
-                        ft.Container(ft.Text(date_display, size=11, color="#6b7280"), width=125),
+                        ft.Container(ft.Text(value=date_display, size=11, color="#6b7280"), width=125),
                         ft.Container(
                             ft.Row(
                                 [
@@ -987,11 +999,11 @@ class ArchiveTabFlet:
         
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Potwierdzenie"),
-            content=ft.Text("Czy na pewno chcesz usunąć wszystkie rekordy z archiwum?\nTej operacji nie można cofnąć!"),
+            title=ft.Text(value="Potwierdzenie"),
+            content=ft.Text(value="Czy na pewno chcesz usunąć wszystkie rekordy z archiwum?\nTej operacji nie można cofnąć!"),
             actions=[
-                ft.TextButton("Anuluj", on_click=cancel_clear),
-                ft.TextButton("Usuń wszystko", on_click=confirm_clear, style=ft.ButtonStyle(color="#b91c1c")),
+                ft.TextButton(content="Anuluj", on_click=cancel_clear),
+                ft.TextButton(content="Usuń wszystko", on_click=confirm_clear, style=ft.ButtonStyle(color="#b91c1c")),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -1015,11 +1027,11 @@ class ArchiveTabFlet:
         
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Potwierdzenie"),
-            content=ft.Text(f"Czy na pewno chcesz usunąć rekord #{record_id}?"),
+            title=ft.Text(value="Potwierdzenie"),
+            content=ft.Text(value=f"Czy na pewno chcesz usunąć rekord #{record_id}?"),
             actions=[
-                ft.TextButton("Anuluj", on_click=cancel_delete),
-                ft.TextButton("Usuń", on_click=confirm_delete, style=ft.ButtonStyle(color="#b91c1c")),
+                ft.TextButton(content="Anuluj", on_click=cancel_delete),
+                ft.TextButton(content="Usuń", on_click=confirm_delete, style=ft.ButtonStyle(color="#b91c1c")),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -1088,7 +1100,7 @@ class ArchiveTabFlet:
         
         # Zawartość dialogu
         content_items: list[ft.Control] = [
-            ft.Text(f"Wprowadź faktyczny wynik losowania {game_type}", size=16, weight=ft.FontWeight.BOLD),  # type: ignore
+            ft.Text(value=f"Wprowadź faktyczny wynik losowania {game_type}", size=16, weight=ft.FontWeight.BOLD),  # type: ignore
             ft.Container(height=10),  # type: ignore
             main_entry,
         ]
@@ -1099,7 +1111,7 @@ class ArchiveTabFlet:
         
         dialog = ft.AlertDialog(  # type: ignore
             modal=True,
-            title=ft.Text(f"Dodaj faktyczny wynik - {game_type}"),
+            title=ft.Text(value=f"Dodaj faktyczny wynik - {game_type}"),
             content=ft.Container(
                 content=ft.Column(
                     content_items,
@@ -1109,8 +1121,8 @@ class ArchiveTabFlet:
                 width=450,
             ),
             actions=[
-                ft.TextButton("Anuluj", on_click=cancel_dialog),
-                ft.Button("✓ Zapisz", on_click=save_result, bgcolor="#15803d", color="white"),
+                ft.TextButton(content="Anuluj", on_click=cancel_dialog),
+                ft.Button(content="✓ Zapisz", on_click=save_result, bgcolor="#15803d", color="white"),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -1119,6 +1131,163 @@ class ArchiveTabFlet:
         dialog.open = True
         self.page.update()  # type: ignore
     
+    @staticmethod
+    def _parse_draw_date(text: str) -> str:
+        """Zamienia datę 'RRRR-MM-DD' lub 'DD.MM.RRRR' na ISO. Rzuca ValueError przy błędnej/przyszłej dacie."""
+        for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+            try:
+                parsed = datetime.strptime(text.strip(), fmt).date()
+            except ValueError:
+                continue
+            if parsed > datetime.now().date():
+                raise ValueError("Data losowania nie może być z przyszłości!")
+            return parsed.isoformat()
+        raise ValueError("Podaj datę w formacie RRRR-MM-DD lub DD.MM.RRRR!")
+
+    @staticmethod
+    def _parse_draw_numbers(text: str, count: int, max_value: int, label: str) -> str:
+        """Waliduje liczby oddzielone spacjami i zwraca je posortowane jako 'a,b,c'. Rzuca ValueError z komunikatem."""
+        try:
+            nums = [int(x) for x in text.replace(",", " ").split()]
+        except ValueError:
+            raise ValueError("Wprowadź poprawne liczby całkowite oddzielone spacjami!") from None
+        if len(nums) != count:
+            raise ValueError(f"{label}: wymagane dokładnie {count} liczb!")
+        if any(n < 1 or n > max_value for n in nums):
+            raise ValueError(f"{label}: liczby muszą być z zakresu 1-{max_value}!")
+        if len(set(nums)) != count:
+            raise ValueError(f"{label}: liczby nie mogą się powtarzać!")
+        return ",".join(str(n) for n in sorted(nums))
+
+    def add_draw_results_dialog(self, e: Any) -> None:  # type: ignore
+        """Dialog do dodawania samych wyników losowań (data + liczby) – uwzględnianych w statystykach"""
+        game_dropdown = ft.Dropdown(
+            label="Gra",
+            value="Lotto",
+            options=[ft.dropdown.Option("Lotto"), ft.dropdown.Option("Eurojackpot")],
+            width=170,
+        )
+        date_field = ft.TextField(
+            label="Data losowania",
+            value=datetime.now().date().isoformat(),
+            hint_text="RRRR-MM-DD lub DD.MM.RRRR",
+            width=200,
+        )
+        main_field = ft.TextField(
+            label="Wylosowane liczby (6 z 1-49)",
+            hint_text="np. 1 12 23 34 45 49",
+            width=380,
+        )
+        extra_field = ft.TextField(
+            label="Gwiazdy (2 z 1-12)",
+            hint_text="np. 3 7",
+            width=380,
+            visible=False,
+        )
+        results_list = ft.ListView(spacing=2, height=220)
+
+        def rebuild_list() -> None:
+            results_list.controls.clear()
+            for result_id, _, draw_date, numbers, extra in self.database.get_draw_results(game_dropdown.value):
+                text = f"{draw_date}   {numbers.replace(',', ' ')}"
+                if extra:
+                    text += f"   ⭐ {extra.replace(',', ' ')}"
+                results_list.controls.append(
+                    ft.Row(
+                        [
+                            ft.Text(value=text, size=12, expand=True),
+                            ft.IconButton(
+                                icon=ft.Icons.DELETE_OUTLINE,
+                                icon_color="#ef4444",
+                                icon_size=16,
+                                tooltip="Usuń wynik",
+                                data=result_id,
+                                on_click=on_delete,
+                            ),
+                        ],
+                        spacing=4,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    )
+                )
+            if not results_list.controls:
+                results_list.controls.append(ft.Text(value="Brak zapisanych wyników.", size=12, color="#6b7280"))
+
+        def on_delete(ev: Any) -> None:  # type: ignore
+            self.database.delete_draw_result(ev.control.data)
+            rebuild_list()
+            self.refresh_archive()
+            self.show_snackbar("Wynik losowania usunięty!", "#15803d")
+
+        def on_game_change(ev: Any) -> None:  # type: ignore
+            is_euro = game_dropdown.value == "Eurojackpot"
+            main_field.label = "Wylosowane liczby (5 z 1-50)" if is_euro else "Wylosowane liczby (6 z 1-49)"
+            main_field.hint_text = "np. 1 12 23 34 45" if is_euro else "np. 1 12 23 34 45 49"
+            extra_field.visible = is_euro
+            rebuild_list()
+            self.page.update()  # type: ignore
+
+        game_dropdown.on_select = on_game_change
+
+        def save_result(ev: Any) -> None:  # type: ignore
+            game = game_dropdown.value or "Lotto"
+            try:
+                draw_date = self._parse_draw_date(date_field.value or "")
+                if game == "Lotto":
+                    main_str = self._parse_draw_numbers(main_field.value or "", 6, 49, "Liczby")
+                    extra_str = None
+                else:
+                    main_str = self._parse_draw_numbers(main_field.value or "", 5, 50, "Liczby główne")
+                    extra_str = self._parse_draw_numbers(extra_field.value or "", 2, 12, "Gwiazdy")
+            except ValueError as ex:
+                self.show_snackbar(str(ex), "#b91c1c")
+                return
+
+            if self.database.add_draw_result(game, draw_date, main_str, extra_str) is None:
+                self.show_snackbar(f"Wynik {game} z dnia {draw_date} już istnieje!", "#b91c1c")
+                return
+
+            main_field.value = ""
+            extra_field.value = ""
+            rebuild_list()
+            self.refresh_archive()
+            self.show_snackbar(f"Wynik {game} z dnia {draw_date} zapisany!", "#15803d")
+
+        def close_dialog(ev: Any) -> None:  # type: ignore
+            dialog.open = False
+            self.page.update()  # type: ignore
+
+        rebuild_list()
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(value="Wyniki losowań"),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            value="Same wyniki losowań (bez kuponu) – wliczane do statystyk.",
+                            size=12, color="#6b7280",
+                        ),
+                        ft.Row([game_dropdown, date_field], spacing=10),
+                        main_field,
+                        extra_field,
+                        ft.Button(content="➕ Dodaj wynik", on_click=save_result, bgcolor="#15803d", color="white"),
+                        ft.Divider(),
+                        ft.Text(value="Zapisane wyniki", size=13, weight=ft.FontWeight.BOLD),
+                        results_list,
+                    ],
+                    tight=True,
+                    spacing=8,
+                ),
+                width=450,
+            ),
+            actions=[ft.TextButton(content="Zamknij", on_click=close_dialog)],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.overlay.append(dialog)  # type: ignore
+        dialog.open = True
+        self.page.update()  # type: ignore
+
     def add_custom_numbers_dialog(self, e: Any) -> None:
         """Dialog do wprowadzenia własnych liczb do archiwum (obsługuje wiele zestawów)"""
         game_dropdown = ft.Dropdown(
@@ -1132,7 +1301,7 @@ class ArchiveTabFlet:
         )
 
         # Dynamiczna lista wpisów: każdy wpis to dict {"main": TextField, "extra": TextField | None}
-        entries: list[dict] = []
+        entries: list[EntryFields] = []
         entries_column = ft.Column(spacing=8, tight=True, scroll=ft.ScrollMode.AUTO)
 
         def is_euro() -> bool:
@@ -1151,10 +1320,10 @@ class ArchiveTabFlet:
                     hint_text="np. 3 7",
                     width=130,
                 )
-            entry: dict = {"main": main_f, "extra": extra_f}
+            entry: EntryFields = {"main": main_f, "extra": extra_f}
             entries.append(entry)
 
-            def on_delete(ev: Any, ent: dict = entry) -> None:  # type: ignore
+            def on_delete(ev: Any, ent: EntryFields = entry) -> None:  # type: ignore
                 if len(entries) <= 1:
                     return
                 i = entries.index(ent)
@@ -1277,7 +1446,7 @@ class ArchiveTabFlet:
 
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Dodaj własne liczby do archiwum"),
+            title=ft.Text(value="Dodaj własne liczby do archiwum"),
             content=ft.Container(
                 content=ft.Column(
                     [
@@ -1286,7 +1455,7 @@ class ArchiveTabFlet:
                         entries_column,
                         ft.Container(height=6),
                         ft.TextButton(
-                            "➕ Dodaj kolejny zestaw (maks. 10)",
+                            content="➕ Dodaj kolejny zestaw (maks. 10)",
                             on_click=on_add_entry,
                         ),
                     ],
@@ -1298,8 +1467,8 @@ class ArchiveTabFlet:
                 height=420,
             ),
             actions=[
-                ft.TextButton("Anuluj", on_click=cancel_dialog),
-                ft.Button("✓ Archiwizuj kupon", on_click=save_custom, bgcolor="#15803d", color="white"),
+                ft.TextButton(content="Anuluj", on_click=cancel_dialog),
+                ft.Button(content="✓ Archiwizuj kupon", on_click=save_custom, bgcolor="#15803d", color="white"),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -1316,7 +1485,7 @@ class ArchiveTabFlet:
         main_sets = numbers.split("|") if numbers else [""]
         extra_sets = extra_numbers.split("|") if extra_numbers else []
 
-        entries: list[dict] = []
+        entries: list[EntryFields] = []
         entries_column = ft.Column(spacing=8, tight=True, scroll=ft.ScrollMode.AUTO)
 
         def make_entry_row(idx: int, main_val: str = "", extra_val: str = "") -> None:
@@ -1334,10 +1503,10 @@ class ArchiveTabFlet:
                     value=" ".join(extra_val.split(",")) if extra_val else "",
                     width=130,
                 )
-            entry: dict = {"main": main_f, "extra": extra_f}
+            entry: EntryFields = {"main": main_f, "extra": extra_f}
             entries.append(entry)
 
-            def on_delete(ev: Any, ent: dict = entry) -> None:  # type: ignore
+            def on_delete(ev: Any, ent: EntryFields = entry) -> None:  # type: ignore
                 if len(entries) <= 1:
                     return
                 i = entries.index(ent)
@@ -1448,14 +1617,14 @@ class ArchiveTabFlet:
 
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text(f"Edytuj wpisane liczby - {game_type} #{record_id}"),
+            title=ft.Text(value=f"Edytuj wpisane liczby - {game_type} #{record_id}"),
             content=ft.Container(
                 content=ft.Column(
                     [
                         entries_column,
                         ft.Container(height=6),
                         ft.TextButton(
-                            "➕ Dodaj kolejny zestaw (maks. 10)",
+                            content="➕ Dodaj kolejny zestaw (maks. 10)",
                             on_click=on_add_entry,
                         ),
                     ],
@@ -1467,8 +1636,8 @@ class ArchiveTabFlet:
                 height=420,
             ),
             actions=[
-                ft.TextButton("Anuluj", on_click=cancel_dialog),
-                ft.Button("✓ Zapisz poprawki", on_click=save_edit, bgcolor="#15803d", color="white"),
+                ft.TextButton(content="Anuluj", on_click=cancel_dialog),
+                ft.Button(content="✓ Zapisz poprawki", on_click=save_edit, bgcolor="#15803d", color="white"),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -1520,11 +1689,11 @@ class ArchiveTabFlet:
 
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text(f"Wpisz kwotę wygranej – #{record_id} ({game_type})"),
+            title=ft.Text(value=f"Wpisz kwotę wygranej – #{record_id} ({game_type})"),
             content=ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text("Podaj kwotę wygranej i walutę.", size=13),
+                        ft.Text(value="Podaj kwotę wygranej i walutę.", size=13),
                         ft.Container(height=10),
                         ft.Row([amount_field, currency_dropdown], spacing=10),
                     ],
@@ -1534,8 +1703,8 @@ class ArchiveTabFlet:
                 width=380,
             ),
             actions=[
-                ft.TextButton("Anuluj", on_click=cancel_dialog),
-                ft.Button("✓ Zapisz", on_click=save_prize, bgcolor="#15803d", color="white"),
+                ft.TextButton(content="Anuluj", on_click=cancel_dialog),
+                ft.Button(content="✓ Zapisz", on_click=save_prize, bgcolor="#15803d", color="white"),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -1580,12 +1749,12 @@ class ArchiveTabFlet:
 
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Ustawienia cen zakładów"),
+            title=ft.Text(value="Ustawienia cen zakładów"),
             content=ft.Container(
                 content=ft.Column(
                     [
                         ft.Text(
-                            "Zmiana cen dotyczy wyłącznie nowych kuponów.\n"
+                            value="Zmiana cen dotyczy wyłącznie nowych kuponów.\n"
                             "Kupony już dodane zachowają cenę z momentu dodania.",
                             size=12, color="#6b7280",
                         ),
@@ -1600,8 +1769,8 @@ class ArchiveTabFlet:
                 width=280,
             ),
             actions=[
-                ft.TextButton("Anuluj", on_click=cancel_dialog),
-                ft.Button("✓ Zapisz", on_click=save_prices, bgcolor="#6366f1", color="white"),
+                ft.TextButton(content="Anuluj", on_click=cancel_dialog),
+                ft.Button(content="✓ Zapisz", on_click=save_prices, bgcolor="#6366f1", color="white"),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -1613,7 +1782,7 @@ class ArchiveTabFlet:
         """Pokazanie komunikatu snackbar"""
         self.page.show_dialog(  # type: ignore
             ft.SnackBar(
-                content=ft.Text(message, color="white"),
+                content=ft.Text(value=message, color="white"),
                 bgcolor=color,
                 duration=2000,
             )
@@ -1632,7 +1801,7 @@ class ArchiveTabFlet:
                         content=ft.Row(
                             [
                                 ft.Text(
-                                    "📚 Archiwum wylosowanych liczb",
+                                    value="📚 Archiwum wylosowanych liczb",
                                     size=22,
                                     weight=ft.FontWeight.BOLD,
                                     color=None,
@@ -1645,6 +1814,14 @@ class ArchiveTabFlet:
                                             style=ft.ButtonStyle(
                                                 bgcolor="#d1fae5",
                                                 color="#065f46",
+                                            ),
+                                        ),
+                                        ft.Button(
+                                            content="🎯 Wyniki losowań",
+                                            on_click=self.add_draw_results_dialog,
+                                            style=ft.ButtonStyle(
+                                                bgcolor="#fef3c7",
+                                                color="#78350f",
                                             ),
                                         ),
                                         ft.Button(
@@ -1686,7 +1863,7 @@ class ArchiveTabFlet:
                     ft.Container(
                         content=ft.Row(
                             [
-                                ft.Text("Filtruj:", size=14, weight=ft.FontWeight.BOLD),
+                                ft.Text(value="Filtruj:", size=14, weight=ft.FontWeight.BOLD),
                                 ft.Dropdown(
                                     value=self.filter_value,
                                     options=[

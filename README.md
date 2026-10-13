@@ -2,7 +2,7 @@
 
 **Generator szczęśliwych liczb do gier losowych** — nowoczesna aplikacja desktopowa z archiwum wyników.
 
-![Version](https://img.shields.io/badge/wersja-1.6-6366f1)
+![Version](https://img.shields.io/badge/wersja-1.7-6366f1)
 ![Python](https://img.shields.io/badge/Python-3.14-15803d)
 ![License](https://img.shields.io/badge/licencja-CC%20BY%204.0-blue)
 
@@ -24,6 +24,8 @@
 - **Najczęstsze pary gwiazd** — w sekcji statystyk, obok par głównych Eurojackpot, wyświetlane są najczęstsze pary liczb dodatkowych (gwiazd)
 - **Częstotliwość najczęstszych liczb** — nowa sekcja po Finansach pokazująca co ile losowań średnio pojawia się każda z top 5 najczęstszych liczb (osobno liczby główne i gwiazdy EJ)
 - **Edycja wpisanych liczb kuponu** — w archiwum można poprawić błędnie wpisane liczby zestawu (lub wszystkich zestawów) kuponu bez konieczności jego usuwania
+- **Same wyniki losowań** — przycisk „🎯 Wyniki losowań” w archiwum pozwala zapisać datę losowania i wylosowane liczby (bez kuponu); wyniki trafiają do osobnej tabeli `draw_results` i są wliczane do statystyk liczb, par i trójek (identyczne wyniki z kuponów i z tej listy liczone są raz)
+- **Odstęp między trafieniami** — przy najczęstszych liczbach, parach i trójkach obok procentu wyświetlane jest, co ile losowań średnio dana liczba/układ się trafia, np. `12× (24%, co 4.2 los.)`
 
 ---
 
@@ -93,6 +95,7 @@ Uruchom_Lottomat.bat  → launcher Windows
 
 | Wersja | Zmiany |
 |--------|--------|
+| 1.7 | Dodawanie samych wyników losowań (data + liczby, osobna tabela `draw_results`) wliczanych do statystyk liczb, par i trójek; przy najczęstszych liczbach, parach i trójkach obok procentu wyświetlany jest średni odstęp w losowaniach (np. `12× (24%, co 4.2 los.)`); identyczne wyniki z kuponów i z listy wyników liczone jako jedno losowanie; poprawki typowania w `archive_tab_flet.py` |
 | 1.5 | Najczęstsze pary gwiazd Eurojackpot wyświetlane obok par głównych; sekcja częstotliwości najczęstszych liczb (co ile losowań); poprawka czytelności statystyk w trybie ciemnym |
 | 1.4 | Statystyki najczęstszych par i trójek liczb w wynikach losowania (top 5, osobno dla Lotto i Eurojackpot); poprawka kopiowania do schowka i archiwizacji własnych liczb dla Flet 0.84+ |
 | 1.3 | Kwota wygranej przy trafionych stopniach, statystyki finansowe (wydatki/wygrane/bilans), zarządzanie cenami zakładów z historycznym zachowaniem ceny przy zmianie |
